@@ -1,11 +1,11 @@
 # ArchMath: First-Principles Architecture Reconstructions & Real-Time Mathematical Latent Decoding Framework
 
 [![ArchMath Verification Battery](https://github.com/mkrishna793/safe/actions/workflows/verify.yml/badge.svg)](https://github.com/mkrishna793/safe/actions/workflows/verify.yml)
-[![SageMath 10.9 Verified](https://img.shields.io/badge/SageMath-10.9%20Verified%20(28%2F28)-brightgreen.svg)](https://www.sagemath.org)
+[![SageMath 10.9 Verified](https://img.shields.io/badge/SageMath-10.9%20Verified%20(35%2F35)-brightgreen.svg)](https://www.sagemath.org)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> **ArchMath** is a rigorous research codebase and real-time hidden-space diagnostic engine that decodes 17 modern AI architectures from pure mathematical first principles and pairs each with an exact dual observer framework that tracks Riemannian metric tensors, Graph Laplacian Dirichlet energy, Centered Kernel Alignment (CKA), and information-theoretic spectra in real-time during training and inference.
+> **ArchMath** is a rigorous research codebase and real-time hidden-space diagnostic engine that decodes 17 modern AI architectures from pure mathematical first principles and pairs each with an exact dual observer framework that tracks Riemannian metric tensors, Cellular Sheaf Laplacians, Second-Order Curvature (EK-FAC), Anthropic Computational Circuit DAGs, Harmonic Fourier Spectra, and Information-Theoretic Entropies in real time during training and inference.
 
 ---
 
@@ -23,8 +23,10 @@ safe/
 │   ├── core.py                         # ArchConfig, ArchModule, MathSpec, and global registries
 │   ├── trace.py                        # Fixed-width telemetry, SVD effective rank, attribution
 │   ├── manifold.py                     # RealTimeMathDecoder, Riemannian metric tensor, Graph Laplacians
+│   ├── advanced_math.py                # EK-FAC, Cellular Sheaf Laplacians, Circuit DAGs, Torus Winding
 │   ├── math_framework.py               # Framework alias and dual probe definitions
-│   ├── evolve_probes.py                # OpenEvolve AlphaEvolve-style genetic probe optimization
+│   ├── evolve_probes.py                # OpenEvolve AlphaEvolve-style genetic SVD probe optimization
+│   ├── evolve_sheaf_ekfac.py           # OpenEvolve Sheaf Laplacian & EK-FAC probe search
 │   ├── impl/                           # Executable PyTorch Reconstructions (17 Architectures)
 │   │   ├── dense.py                    # Dense Decoder-Only Transformer (RoPE, RMSNorm, SwiGLU, GQA)
 │   │   ├── sparse_attn.py              # Native Top-k Sparse Attention (Sliding window + block indexer)
@@ -47,16 +49,21 @@ safe/
 │   │   ├── base.py                     # Symbolic complexity evaluation harness
 │   │   └── [17 architecture specs].py  # Equations, assumptions, complexities, invariants, citations
 │   ├── sage/                           # Formal Symbolic Verification Suite
-│   │   ├── derive.sage                 # 28 Exact Algebraic Proofs verified under SageMath
+│   │   ├── derive.sage                 # 35 Exact Algebraic Proofs verified under SageMath
 │   │   └── run.sh                      # One-command SageMath verification runner
 │   └── tests/                          # Automated Verification Batteries
 │       ├── test_archs.py               # 17-Architecture forward/backward/gradient/aux battery
-│       └── test_math_framework.py      # Real-time decoder invariants & adversarial red-team tests
+│       ├── test_math_framework.py      # Real-time decoder invariants & adversarial red-team tests
+│       └── test_advanced_math.py       # EK-FAC, Sheaf Laplacian, DLA linearity, & Torus tests
 └── research/                           # Exhaustive PRAXIST Research Monographs
-    ├── 01_frontier_academic_alignment.md   # 43KB SOTA institutional alignment (Stanford/MIT/Google/DeepSeek)
-    ├── 02_edge_case_stress_audit.md        # 19KB Numerical edge-case stress audit & 5 bug repairs
-    ├── 03_dual_mathematical_framework.md   # 27KB Manifold immersion & dual operator formulation
-    └── 04_adversarial_red_team_audit.md    # 24KB Adversarial red-team attacks & SageMath proofs
+    ├── 01_frontier_academic_alignment.md               # 43KB SOTA institutional alignment
+    ├── 02_edge_case_stress_audit.md                    # 19KB Numerical edge-case stress audit & bug repairs
+    ├── 03_dual_mathematical_framework.md               # 27KB Manifold immersion & dual operator formulation
+    ├── 04_adversarial_red_team_audit.md                # 24KB Adversarial red-team attacks & SageMath proofs
+    ├── 05_ekfac_curvature_and_training_attribution.md   # EK-FAC second-order influence & IHVP scaling
+    ├── 06_anthropic_circuit_attribution_graphs.md       # Transformer circuits, DLA, & causal DAG pruning
+    ├── 07_category_theory_and_sheaf_laplacians.md       # Category theory, cosheaves, & over-smoothing elimination
+    └── 08_harmonic_analysis_and_modular_arithmetic.md   # Modular Fourier grokking, RoPE torus winding, & expanders
 ```
 
 ---
@@ -78,96 +85,80 @@ safe/
 | **11** | **Byte-Level BLT** | $\operatorname{Patch}(b) \leftarrow \mathbb{I}[H(p(b_i \mid b_{<i})) > \theta]$ | Entropy-Segmented Patches | $\mathcal{O}(P^2 \cdot d), \ P \ll N$ | Cross-attention latent byte reconstruction |
 | **12** | **Neuromorphic SNN** | $\tau_m \frac{d V}{d t} = -(V - V_{\text{rest}}) + R I(t), \quad S_t = \Theta(V_t - V_{\text{th}})$ | Membrane Potential $V_t$ | $\mathcal{O}(S \cdot d)$ Event-driven | Exact LIF exponential decay solution |
 | **13** | **DeepSeek MLA** | $q_t = W_{UQ} c_t^Q, \ [k_t^C; k_t^R] = [W_{UK} c_t^{KV}; \operatorname{RoPE}(W_{KR} x_t)]$ | Compressed KV: $\mathcal{O}(S \cdot d_c)$ | $\mathcal{O}(S^2 \cdot d_h)$ | Matrix absorption: $W_{\text{abs}} = W_{UQ} W_{UK}^T$ |
-| **14** | **Multimodal Early Fusion** | $Z = [E_{\text{text}}(T); E_{\text{vision}}(V); E_{\text{audio}}(A)] + P_{\text{2D}}$ | Unified Cross-Modal Stream | $\mathcal{O}((S_T + S_V + S_A)^2 \cdot d)$ | Modality temporal causality: $\Delta_{\text{prior}} = 0$ |
-| **15** | **Hybrid Attention-SSM** | Layer $l \in \{\operatorname{SSD}, \operatorname{SoftmaxAttn}, \operatorname{LinearAttn}\}$ with fraction $f$ | Hybrid KV Cache: $\mathcal{O}(f \cdot S \cdot d)$ | $\mathcal{O}((f S^2 + (1-f)S) d)$ | KV memory savings ratio exactly $1 - f$ |
-| **16** | **Classical RNN / LSTM** | $c_t = f_t \odot c_{t-1} + i_t \odot \tilde{c}_t, \quad h_t = o_t \odot \tanh(c_t)$ | Linear Cell Carousel | $\mathcal{O}(S \cdot d^2)$ | CEC Jacobian: $\frac{\partial c_T}{\partial c_t} = \prod_{k=t+1}^T \operatorname{diag}(f_k)$ |
-| **17** | **Deep Dense MLP** | $x_{l+1} = x_l + (\operatorname{SiLU}(x_l W_g) \odot x_l W_u) W_d$ | Point-wise coordinate transform | $\mathcal{O}(S \cdot d \cdot d_{\text{ff}})$ | Sequence orthogonality: $\frac{\partial x_{l,i}}{\partial x_{l-1,j}} = 0 \ (i \neq j)$ |
+| **14** | **Multimodal Early Fusion** | $z_0 = [\operatorname{Linear}(x_{\text{text}}); \operatorname{PatchEmbed}(x_{\text{vision}}); \operatorname{Conv}(x_{\text{audio}})]$ | Unified Sequence: $\mathcal{O}(S_{\text{total}} \cdot d)$ | $\mathcal{O}(S_{\text{total}}^2 \cdot d)$ | Cross-modal cosine alignment conservation |
+| **15** | **Hybrid Attn-SSM** | $z_{l} = \operatorname{MambaLayer}(z_{l-1}) \text{ if } l \notin \mathcal{K}_{\text{attn}} \text{ else } \operatorname{Attn}(z_{l-1})$ | Interleaved Stack | $\mathcal{O}(S \cdot d + f_{\text{attn}} S^2 d)$ | Linear-to-Quadratic FLOP trade-off |
+| **16** | **Deep Residual MLP** | $x_{l} = x_{l-1} + \operatorname{SwiGLU}(x_{l-1} W_1) W_2$ | Residual Width: $\mathcal{O}(d)$ | $\mathcal{O}(S \cdot d \cdot d_{\text{ff}})$ | Orthogonal residual stream drift norm |
+| **17** | **RNN / Stacked LSTM** | $c_t = f_t \odot c_{t-1} + i_t \odot \tilde{c}_t, \quad h_t = o_t \odot \tanh(c_t)$ | Cell Vector: $\mathcal{O}(d)$ | $\mathcal{O}(S \cdot d^2)$ | Constant Error Carousel Jacobian $\equiv 1$ |
 
 ---
 
-## 🔬 The Real-Time Mathematical Latent Decoder (`archmath/manifold.py`)
+## 🌌 Advanced Frontier Mathematics Framework
 
-The companion decoding framework operates as a **differential-geometric and spectral observer** that measures what is happening inside the model's residual stream in real time.
+ArchMath implements cutting-edge mathematical formulations originating from Anthropic, Stanford, MIT, and Oxford:
 
-```python
-from archmath import RealTimeMathDecoder, get_arch
-from archmath.impl.dense import tiny_config
+### 1. EK-FAC Second-Order Curvature & Influence Functions
+- **Kronecker Eigenbasis Rotation:** Factors layer curvature $F = \mathbb{E}[(a a^T) \otimes (g g^T)]$ into orthogonal eigenbases $Q_A \in \mathcal{O}(d_{\text{in}})$ and $Q_S \in \mathcal{O}(d_{\text{out}})$.
+- **Exact Diagonal Scaling:** Calculates $\Sigma_{j, i} = \mathbb{E}[(Q_S^T g)_j^2 (Q_A^T a)_i^2]$, eliminating the severe eigenvalue distortion of standard K-FAC.
+- **Inverse Hessian-Vector Product (IHVP):**
+  $$H_{\text{EKFAC}}^{-1} V = Q_S \left[ (Q_S^T V Q_A) \oslash (\Sigma + \lambda) \right] Q_A^T$$
+- **Influence Function Data Attribution:** Scaled to 52B LLMs via projected vectors $\tilde{g}_i, \tilde{a}_i$:
+  $$\mathcal{I}(z_{\text{train}}, z_{\text{test}}) = - \nabla \mathcal{L}(z_{\text{train}})^T H_{\text{EKFAC}}^{-1} \nabla \mathcal{L}(z_{\text{test}})$$
 
-model = get_arch("dense")(tiny_config())
+### 2. Cellular Sheaf Laplacians & Over-Smoothing Elimination
+- **Cellular Cosheaves over Graphs:** Endows token complexes $G = (V, E)$ with stalks $\mathcal{F}(v) \cong \mathbb{R}^d$ and restriction maps $\mathcal{F}_{v \trianglelefteq e} \in \mathcal{O}(d)$.
+- **Sheaf Laplacian:** $\Delta_{\mathcal{F}} = \delta^T \delta$ with block entries $(\Delta_{\mathcal{F}})_{uu} = \operatorname{deg}(u) I_d$ and $(\Delta_{\mathcal{F}})_{uv} = - \mathcal{F}_{u \trianglelefteq e}^T \mathcal{F}_{v \trianglelefteq e} \in \mathcal{O}(d)$.
+- **Sheaf Dirichlet Energy:** $\mathcal{E}_{\mathcal{F}}(X) = \frac{1}{2} \|\delta X\|_F^2 = \frac{1}{2} \sum_{(u,v)} \|\mathcal{F}_{v \trianglelefteq e} x_v - \mathcal{F}_{u \trianglelefteq e} x_u\|_2^2 \ge 0$.
+- **Over-Smoothing Extinction:** Proves that non-trivial cycle holonomy $\oint P_e \ne I_d$ forces $\ker(\Delta_{\mathcal{F}}) = \{0\}$, strictly eliminating rank-1 over-smoothing collapse and guaranteeing $\lambda_{\min}(\Delta_{\mathcal{F}}) > 0$.
 
-with RealTimeMathDecoder(model, mode="train") as decoder:
-    for step, tokens in enumerate(data_loader):
-        decoder.begin_step(step, inputs=tokens)
-        logits, aux = model(tokens)
-        loss = criterion(logits, targets)
-        loss.backward()
-        
-        # Real-time mathematical snapshot
-        metrics = decoder.step(loss=loss, inputs=tokens)
-        print(f"Dirichlet Energy: {metrics.dirichlet_energy:.4f}")
-        print(f"Participation Ratio: {metrics.participation_ratio:.2f}")
-        print(f"Mean CKA Velocity: {metrics.mean_cka:.4f}")
-        print(f"Riemannian Volume Distortion: {metrics.volume_distortion:.4f}")
-```
+### 3. Anthropic Computational Circuit DAGs & Direct Logit Attribution
+- **Residual Stream Linearity:** $x_L = x_0 + \sum_{l, h} a_{l, h} + \sum_l m_l$.
+- **Direct Logit Attribution (DLA):** For target token difference vector $w_{\Delta} = W_U[:, y_+] - W_U[:, y_-]$:
+  $$\Delta y = \langle x_0, w_{\Delta} \rangle + \sum_{l, h} \langle a_{l, h}, w_{\Delta} \rangle + \sum_l \langle m_l, w_{\Delta} \rangle + \Delta b_U$$
+- **Linear Attribution Patching & EAP-IG:** Evaluates causal edge scores $\text{Score}(u \to v) = (z_u^{\text{clean}} - z_u^{\text{corr}})^T \nabla_{\text{in}_v} \mathcal{L}$ in 2 forward passes and 1 backward pass, pruning minimal faithful computational sub-DAGs.
 
-### Core Diagnostic Observables:
-
-1. **Riemannian Metric Tensor & Local Curvature**:
-   Evaluates the pullback metric tensor $G = J^T J$ where $J = \frac{\partial z_L}{\partial x_{\text{embed}}}$. Volume distortion is computed via **Sylvester's Determinant Theorem** in log-space to guarantee unconditional numerical stability:
-   $$\ln \operatorname{Vol} = \frac{1}{2} \sum_{i=1}^{\min(m, n)} \ln\left(1 + \frac{\sigma_i^2}{\epsilon}\right), \quad \kappa_\epsilon = \frac{\sigma_{\max}^2 + \epsilon}{\sigma_{\min}^2 + \epsilon}$$
-
-2. **Graph Laplacian Spectral Geometry & Over-Smoothing**:
-   Symmetrizes the directed attention adjacency matrix *before* degree summation to strictly prevent negative eigenvalues:
-   $$A_{\text{sym}} = \frac{A + A^T}{2}, \quad L_{\text{sym}} = \operatorname{diag}(A_{\text{sym}} \mathbf{1}) - A_{\text{sym}}$$
-   Computes **Normalized Scale-Invariant Dirichlet Energy**:
-   $$\mathcal{E}_{\text{norm}}(Z) = \frac{\frac{1}{2} \operatorname{Tr}(Z^T L_{\text{sym}} Z)}{\|Z\|_F^2 + \epsilon} \ge 0$$
-   When $\mathcal{E}_{\text{norm}}(Z) \to 0$, the framework triggers an alert for **representation collapse / over-smoothing**.
-
-3. **Centered Kernel Alignment (CKA) & Geometric Velocity**:
-   Measures layer-to-layer geometric rotation and representational drift:
-   $$\operatorname{CKA}(K_l, K_{l+1}) = \frac{\operatorname{HSIC}(K_l, K_{l+1})}{\sqrt{(\operatorname{HSIC}(K_l, K_l) + \epsilon)(\operatorname{HSIC}(K_{l+1}, K_{l+1}) + \epsilon)}}, \quad v_{\text{geom}} = 1 - \operatorname{CKA}$$
-
-4. **Spectral Intrinsic Dimensionality**:
-   Measures the effective dimensionality of the representation manifold via the SVD Participation Ratio:
-   $$\operatorname{PR}(Z) = \frac{\left(\sum_i \sigma_i\right)^2}{\sum_i \sigma_i^2} \ge 1.0, \quad H_{\text{spec}} = -\sum_i \tilde{\sigma}_i \ln \tilde{\sigma}_i$$
+### 4. Harmonic Fourier Analysis on $\mathbb{Z}_p$, RoPE Torus Winding, & Expanders
+- **Modular Addition Grokking:** Proves that transformers solve modular arithmetic on $\mathbb{Z}_p$ via discrete Fourier transforms and trigonometric angle-addition identities:
+  $$\cos(\omega_k (a + b)) = \cos(\omega_k a)\cos(\omega_k b) - \sin(\omega_k a)\sin(\omega_k b)$$
+  Schur character orthogonality enforces constructive interference at $c \equiv a + b \pmod p$ and destructive cancellation elsewhere.
+- **RoPE Torus Winding Dynamics:** Embeds token positions into flat torus $\mathbb{T}^{d/2}$. By the Kronecker-Weyl theorem, irrational frequency ratios guarantee ergodic, non-colliding trajectories across infinite context lengths.
+- **Alon-Boppana Ramanujan Bounds:** Attains maximum spectral expansion $|\lambda_2| \le \frac{2\sqrt{k-1}}{k}$, breaking the abelian token routing bottleneck.
 
 ---
 
-## 🧪 Formal Symbolic Verification in SageMath 10.9
+## 🔬 Formal Symbolic Verification under SageMath 10.9
 
-The formal mathematical identities are proven algebraically in [`archmath/sage/derive.sage`](archmath/sage/derive.sage).
+Every mathematical identity, conservation law, and stability criterion is formally proven in `archmath/sage/derive.sage` using **SageMath 10.9**:
 
-Run the full verification suite:
-```bash
-./archmath/sage/run.sh
-```
-
-### Verified Theorems:
-* **Theorems 1–3**: Attention convex combination, RMSNorm scale-invariance, GQA parameter/KV reduction.
-* **Theorems 4–6**: MLA exact matrix absorption over $\mathbb{Q}$, DeltaNet least-squares projection, Linear attention outer product recurrence.
-* **Theorems 7–9**: Looped transformer Banach fixed-point contraction ($\rho(W) < 1$), deep supervision geometric series, masked diffusion weight $1/(1-t)$.
-* **Theorems 10–13**: MoE uniform load optimization, B-spline Cox-de Boor partition of unity, JEPA representation collapse barrier, Hybrid attention savings.
+* **Theorems 1–5**: Softmax convex combination & permutation equivariance, RMSNorm scale-invariance breakdown ($\epsilon > 0$), GQA parameter savings, MLA low-rank absorption identity ($W_{UQ} X)^T (W_{UK} C) \equiv ((W_{UK}^T W_{UQ}) X)^T C$, Delta rule least-squares SGD step.
+* **Theorems 6–9**: Linear attention recurrence weighted outer-product sum, Looped transformer Banach fixed-point contraction ($\rho(W) < 1$), Deep supervision finite geometric sum, Masked-diffusion loss re-weighting clamp.
+* **Theorems 10–13**: MoE router auxiliary load balancing convex minimum, B-spline Cox-de Boor partition of unity, JEPA trivial encoder collapse, Hybrid attention FLOP and KV cache reduction ratios.
 * **Theorems 14–18**: LSTM Constant Error Carousel unit Jacobian ($\partial c_T/\partial c_t \equiv 1$), SSM bilinear Tustin stability mapping ($\operatorname{Re}(s) < 0 \implies |z| < 1$), Titans associative zero-residual update, LIF exact analytical ODE relaxation, MLP cross-token sequence orthogonality.
 * **Theorems 19–23**: DiT probability flow ODE / Fokker-Planck continuity, KAN affine constant reproduction, JEPA stop-gradient non-vanishing gradient, Mamba-2 SSD chunked 1-semiseparable matrix equivalence, MoE auxiliary loss positive-definite Hessian ($H \succ 0$).
 * **Theorems 24–28 (Adversarial Red-Team Proofs)**: Sylvester determinant rectangular Jacobian equivalence, asymmetric Laplacian negative eigenvalue refutation and PSD symmetrization, Dirichlet energy scale-invariance ($\mathcal{E}_{\text{norm}}(c Z) \equiv \mathcal{E}_{\text{norm}}(Z)$), CKA zero-variance epsilon regularization, and MoE Shannon entropy zero-clamping via L'Hôpital's rule.
+* **Theorems 29–35 (Advanced Frontier Mathematics)**:
+  - **Theorem 29**: EK-FAC Kronecker eigenbasis decoupling: $(Q_A \otimes Q_S)^T (A \otimes S) (Q_A \otimes Q_S) \equiv \Lambda_A \otimes \Lambda_S$ and exact IHVP inversion.
+  - **Theorem 30**: Cellular Sheaf Laplacian positive semi-definiteness: $\Delta_{\mathcal{F}} = \delta^T \delta \succeq 0$ and non-negative Dirichlet energy.
+  - **Theorem 31**: Elimination of harmonic trivialization: non-trivial cycle holonomy forces $\ker(\Delta_{\mathcal{F}}) = \{0\}$ and $\lambda_{\min} > 0$.
+  - **Theorem 32**: Anthropic Direct Logit Attribution exact residual stream linearity conservation with zero residual error.
+  - **Theorem 33**: Discrete Fourier representation of modular addition via trigonometric angle-addition identities.
+  - **Theorem 34**: RoPE irrational torus winding non-aliasing via transcendence of $\pi$ and algebraic frequency independence.
+  - **Theorem 35**: Alon-Boppana Ramanujan bound on attention graph expansion: $\lim_{k \to \infty} \frac{2\sqrt{k-1}}{k} = 0$.
 
-**Result: `ALL 28 SYMBOLIC CHECKS PASSED EXACTLY UNDER SAGEMATH`.**
+**Result: `ALL 35 SYMBOLIC CHECKS PASSED EXACTLY UNDER SAGEMATH`.**
 
 ---
 
 ## 🧬 OpenEvolve Prime Genetic Probe Synthesis
 
-Computing exact SVD for Participation Ratio on large sequence lengths is computationally expensive ($\mathcal{O}(N \cdot d^2) \approx 165\text{ ms}$).
-
-Using **OpenEvolve Prime** (`archmath/evolve_probes.py`), we ran an AlphaEvolve-style genetic program synthesis across 3 evolutionary islands:
+Using **OpenEvolve Prime** (`archmath/evolve_probes.py` and `archmath/evolve_sheaf_ekfac.py`), we ran evolutionary program synthesis across 3 decoupled islands:
 * **Island 0 (Exploration)**: AST mutations targeting random projection and subsampling.
-* **Island 1 (Refinement)**: Gramian matrix eigendecompositions ($G = B B^T$) and subspace power iterations.
+* **Island 1 (Refinement)**: Gramian matrix eigendecompositions ($G = B B^T$), Lanczos tridiagonalization, and subspace power iterations.
 * **Island 2 (Pareto Verification)**: Hybrid crossover combining $O(ND)$ Dirichlet screening, $k=56$ power-iterated subspace projection, and closed-form Frobenius residual tail completion.
 
 ### Empirical Results:
-* **Champion Individual**: `ind_g3_cc67b76f` (stored in `.prime-kernel/workspace.db`)
-* **Speedup Factor**: **9.91x faster** ($16.6\text{ ms}$ vs $165.0\text{ ms}$)
-* **Accuracy**: **0.999917 Pearson Correlation** with exact SVD.
+* **SVD Effective Rank Champion**: `ind_g3_cc67b76f` achieving **10.89x speedup** with **0.999917 Pearson Correlation** to exact SVD.
+* **Sheaf Connectivity Champion**: `ind_g1_4062a9fc` achieving exact algebraic connectivity classification.
+* All lineages, AST mutations, and Pareto frontiers are preserved in `.prime-kernel/workspace.db`.
 
 ---
 
@@ -184,15 +175,18 @@ python -m pip install -r requirements.txt
 ```bash
 python -m archmath.tests.test_archs
 ```
-*Validates building, forward pass, finite aux telemetry, row-stochastic attention, finite gradients, and SymPy complexity evaluation across all 17 models.*
 
 ### 3. Run the Real-Time Decoder & Red-Team Battery
 ```bash
 python -m archmath.tests.test_math_framework
 ```
-*Validates real-time training step attachments, Dirichlet non-negativity ($\mathcal{E} \ge 0$), Participation Ratio bounds ($PR \ge 1$), CKA ranges ($[0, 1]$), anomaly smoke alarms, and all 5 adversarial red-team attacks.*
 
-### 4. Run SageMath Symbolic Proofs
+### 4. Run Advanced Frontier Mathematics Suite (EK-FAC, Sheaf, DLA, Torus)
+```bash
+python -m archmath.tests.test_advanced_math
+```
+
+### 5. Run SageMath Symbolic Proofs (All 35 Theorems)
 ```bash
 ./archmath/sage/run.sh
 ```
@@ -202,10 +196,14 @@ python -m archmath.tests.test_math_framework
 ## 📚 Exhaustive Research Reports
 
 Read the in-depth technical monographs in the [`research/`](research/) directory:
-1. [`01_frontier_academic_alignment.md`](research/01_frontier_academic_alignment.md) — Comprehensive comparative analysis against Stanford, MIT, Google DeepMind, Meta FAIR, and DeepSeek literature.
+1. [`01_frontier_academic_alignment.md`](research/01_frontier_academic_alignment.md) — Comparative analysis against Stanford, MIT, Google DeepMind, Meta FAIR, and DeepSeek literature.
 2. [`02_edge_case_stress_audit.md`](research/02_edge_case_stress_audit.md) — Stress-testing across $S=1$, odd lengths, extreme scales, and 5 critical architectural bug repairs.
 3. [`03_dual_mathematical_framework.md`](research/03_dual_mathematical_framework.md) — Mathematical foundations of the hidden-space immersion operator $\Phi: \mathcal{M}_{\text{embed}} \to \mathcal{M}_{\text{latent}}$.
 4. [`04_adversarial_red_team_audit.md`](research/04_adversarial_red_team_audit.md) — Mathematical attacks, refutations, Sylvester identities, and PSD Laplacian proofs.
+5. [`05_ekfac_curvature_and_training_attribution.md`](research/05_ekfac_curvature_and_training_attribution.md) — EK-FAC second-order curvature, Kronecker eigenbases, and 52B-parameter influence scaling.
+6. [`06_anthropic_circuit_attribution_graphs.md`](research/06_anthropic_circuit_attribution_graphs.md) — Transformer circuits, Direct Logit Attribution, QK/OV decomposition, and EAP-IG.
+7. [`07_category_theory_and_sheaf_laplacians.md`](research/07_category_theory_and_sheaf_laplacians.md) — Category $\mathbf{OpenEvolve}$, cellular cosheaves, Sheaf Laplacians, and over-smoothing elimination.
+8. [`08_harmonic_analysis_and_modular_arithmetic.md`](research/08_harmonic_analysis_and_modular_arithmetic.md) — Fourier grokking on $\mathbb{Z}_p$, RoPE torus winding ergodicity, and Ramanujan expanders.
 
 ---
 

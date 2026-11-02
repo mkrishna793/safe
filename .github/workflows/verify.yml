@@ -34,3 +34,7 @@ jobs:
       - name: Run RealTimeMathDecoder Invariants & Red-Team Battery
         run: |
           python -m archmath.tests.test_math_framework
+
+      - name: Run Advanced Frontier Mathematics Battery (EK-FAC, Sheaf, DLA, Torus)
+        run: |
+          python -m archmath.tests.test_advanced_math

@@ -481,6 +481,17 @@ class ManifoldMetrics:
     cross_modal_alignment: Optional[float] = None
     modality_loss_imbalance: Optional[float] = None
 
+    # 17. Advanced Frontier Mathematical Metrics (EK-FAC, Sheaf, Circuits, Harmonic)
+    ekfac_condition_number: Optional[float] = None
+    sheaf_algebraic_connectivity: Optional[float] = None
+    sheaf_dirichlet_energy: Optional[float] = None
+    is_sheaf_trivial: Optional[bool] = None
+    dla_linearity_error: Optional[float] = None
+    circuit_dag_sparsity: Optional[float] = None
+    fourier_concentration_ratio: Optional[float] = None
+    rope_weyl_equidistribution: Optional[float] = None
+    ramanujan_expansion_ratio: Optional[float] = None
+
     def as_dict(self) -> Dict[str, Any]:
         return dataclasses.asdict(self)
 
@@ -1105,6 +1116,40 @@ class RealTimeMathDecoder:
             if m["dirichlet_energy"] < 0.0:
                 anomalies.append({"step": self._step, "kind": "dirichlet_violation", "where": name, "value": m["dirichlet_energy"]})
 
+        # 9. Advanced Frontier Mathematics: Sheaf Laplacian, Ramanujan, RoPE Torus
+        sheaf_conn: Optional[float] = None
+        sheaf_energy: Optional[float] = None
+        is_sheaf_triv: Optional[bool] = None
+        ramanujan_ratio: Optional[float] = None
+        weyl_equidist: Optional[float] = None
+
+        if attn_tensor is not None and z_L is not None:
+            try:
+                from .advanced_math import CellularSheafLaplacian, HarmonicTorusSpectrum
+                S_nodes = min(8, z_L.shape[1] if z_L.dim() >= 2 else z_L.shape[0])
+                D_dim = min(8, z_L.shape[-1])
+                if S_nodes >= 2 and D_dim >= 2:
+                    sheaf = CellularSheafLaplacian(num_nodes=S_nodes, dim=D_dim)
+                    sheaf.build_from_attention(attn_tensor, threshold=0.05, rotation_scale=0.1)
+                    sheaf_energy = sheaf.compute_sheaf_dirichlet_energy(z_L, normalized=True)
+                    s_report = sheaf.spectral_analysis()
+                    sheaf_conn = s_report.algebraic_connectivity
+                    is_sheaf_triv = s_report.is_harmonic_trivial
+                    ramanujan_ratio = HarmonicTorusSpectrum.ramanujan_expansion_ratio(attn_tensor)
+            except Exception:
+                pass
+
+        if z_L is not None and z_L.dim() >= 2:
+            try:
+                from .advanced_math import HarmonicTorusSpectrum
+                seq_l = z_L.shape[1] if z_L.dim() >= 3 else z_L.shape[0]
+                d_m = z_L.shape[-1]
+                if seq_l >= 2 and d_m >= 4:
+                    mean_w, _ = HarmonicTorusSpectrum.rope_torus_winding(dim=d_m, seq_len=min(seq_l, 128))
+                    weyl_equidist = mean_w
+            except Exception:
+                pass
+
         metric_snap = ManifoldMetrics(
             step=self._step,
             loss=loss_val,
@@ -1136,6 +1181,12 @@ class RealTimeMathDecoder:
             log_volume_distortion=curv_stats.get("log_volume_distortion", 0.0),
             sylvester_log_det=curv_stats.get("sylvester_log_det", 0.0),
             metric_condition_number=curv_stats["metric_condition_number"],
+            # Advanced Frontier Math
+            sheaf_algebraic_connectivity=sheaf_conn,
+            sheaf_dirichlet_energy=sheaf_energy,
+            is_sheaf_trivial=is_sheaf_triv,
+            ramanujan_expansion_ratio=ramanujan_ratio,
+            rope_weyl_equidistribution=weyl_equidist,
             # Layers & Arch
             layer_metrics=layer_metrics,
             architecture_metrics=arch_metrics,
