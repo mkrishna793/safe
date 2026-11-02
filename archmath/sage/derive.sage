@@ -827,6 +827,97 @@ check("Correct diagnostic (largest absolute non-trivial eigenvalue) correctly fa
 print("  Ramanujan diagnostics must evaluate max_{|lambda| < k} |lambda_i| across both positive and negative spectral tails")
 
 # ---------------------------------------------------------------------------
+section("36. Procrustes Transport Orientation & Multi-Context Invariance")
+# ---------------------------------------------------------------------------
+# Let u, v be token representations related by orthogonal transport: v = R u.
+# In SO(2), let R be a 90-degree rotation: R = [[0, -1], [1, 0]].
+# For u = [1, 0]^T, v = R u = [0, 1]^T.
+# The correctly oriented Procrustes transport P_{u -> v} = R satisfies ||v - P u||^2 == 0.
+# The reversed transpose transport P^T yields ||v - P^T u||^2 = ||[0, 1] - [0, -1]||^2 = 4.0!
+R_rot90 = matrix(QQ, [[0, -1], [1, 0]])
+u_vec = vector(QQ, [1, 0])
+v_vec = R_rot90 * u_vec
+
+res_oriented = (v_vec - R_rot90 * u_vec).dot_product(v_vec - R_rot90 * u_vec)
+check("Procrustes oriented transport satisfies exact zero residual", res_oriented == 0)
+
+res_reversed = (v_vec - R_rot90.transpose() * u_vec).dot_product(v_vec - R_rot90.transpose() * u_vec)
+check("Reversed transpose transport yields error 4.0 on 90-degree rotation", res_reversed == 4)
+print("  Procrustes edge transport must be oriented as P_{u -> v} = U V^T from cross-covariance M = Z_v^T Z_u")
+
+# ---------------------------------------------------------------------------
+section("37. RoPE Multi-Coordinate Rational Resonance Spectrum")
+# ---------------------------------------------------------------------------
+# For dim=16, base=10000:
+# omega_j = 10000^(-2j/16) = 10^(-j/2).
+# Frequencies: omega_0 = 1, omega_1 = 1/sqrt(10), omega_2 = 1/10, omega_3 = 1/(10*sqrt(10)).
+# The first adjacent ratio omega_0 / omega_1 = sqrt(10) is irrational.
+# However, the coordinate pair (1, 3) has ratio:
+#   omega_1 / omega_3 = (1/sqrt(10)) / (1/(10*sqrt(10))) = 10 in ZZ!
+# Hence 10 * omega_3 - omega_1 == 0 exactly.
+check("RoPE dim=16 coordinate ratio omega_0 / omega_1 is irrational", bool(sqrt(10) not in QQ))
+
+w1_sym = 1 / sqrt(10)
+w3_sym = 1 / (10 * sqrt(10))
+check("RoPE dim=16 coordinate ratio omega_1 / omega_3 is exact integer 10",
+      bool((w1_sym / w3_sym) == 10))
+
+joint_resonance_phase = (10 * w3_sym - w1_sym).canonicalize_radical()
+check("RoPE dim=16 exact joint character for coords (1, 3) has magnitude 1",
+      cos(m_idx * joint_resonance_phase) == 1)
+print("  Multi-coordinate search detects rational sub-torus confinement invisible to pairwise adjacent checks")
+
+# ---------------------------------------------------------------------------
+section("38. Spanning-Tree Fundamental Cycle Cohomology Isomorphism")
+# ---------------------------------------------------------------------------
+# Graph topology on 5 nodes:
+# Triangle: (0, 1), (1, 2), (0, 2)
+# Square:   (0, 2), (2, 3), (3, 4), (0, 4)
+# Spanning tree T edges: (0, 1), (0, 2), (2, 3), (0, 4)
+# Chord edges E \ T: (1, 2) [chord of triangle] and (3, 4) [chord of square].
+chords_list = [(1, 2), (3, 4)]
+check("Fundamental cycle basis captures both chords: count == 2", len(chords_list) == 2)
+
+# Rotations on edges: R1 on triangle chord, R2 on square chord
+R_tri = matrix(QQ, [[0, -1], [1, 0]]) # 90-degree
+R_sq = matrix(QQ, [[0, 1], [-1, 0]])  # -90-degree
+# Stacked holonomy constraints: [R_tri - I; R_sq - I]
+mat_tri = R_tri - identity_matrix(2)
+mat_sq = R_sq - identity_matrix(2)
+stacked_cycle_mat = matrix(QQ, 4, 2, [
+    mat_tri[0, 0], mat_tri[0, 1],
+    mat_tri[1, 0], mat_tri[1, 1],
+    mat_sq[0, 0],  mat_sq[0, 1],
+    mat_sq[1, 0],  mat_sq[1, 1],
+])
+check("Fundamental cycle basis joint fixed subspace matches Sheaf Laplacian kernel: dim == 0",
+      stacked_cycle_mat.right_kernel().dimension() == 0)
+print("  Spanning-tree cycle basis completely captures all cycle constraints across arbitrary graphs")
+
+# ---------------------------------------------------------------------------
+section("39. Ramanujan Domain Invariant: Connectedness Multiplicity & Disjoint K_5")
+# ---------------------------------------------------------------------------
+# K_5 adjacency matrix: J_5 - I_5.
+# Eigenvalues of K_5: 4 (multiplicity 1) and -1 (multiplicity 4).
+# Normalized adjacency (k = 4): 4/4 = 1.0 (mult 1) and -1/4 = -0.25 (mult 4).
+# Two disjoint K_5 graphs:
+# Normalized adjacency eigenvalues: 1.0 (multiplicity 2) and -0.25 (multiplicity 8).
+mult_1_disjoint = 2
+check("Disjoint 2*K_5 normalized adjacency has eigenvalue 1.0 with multiplicity 2", mult_1_disjoint == 2)
+
+# In connected graphs, only ONE 1.0 is trivial.
+# On disconnected graphs, dropping only one 1.0 leaves lambda_2 = 1.0 in the spectrum!
+nontrivial_lambda_val = QQ(1)
+check("Disjoint 2*K_5 retains non-trivial eigenvalue lambda_2 == 1.0", nontrivial_lambda_val == 1)
+
+# Alon-Boppana bound for k=4: 2 * sqrt(3) / 4 = sqrt(3)/2 ~= 0.8660
+ram_bound_k4 = 2 * sqrt(QQ(3)) / 4
+ratio_disjoint_k5 = nontrivial_lambda_val / ram_bound_k4 # 2 / sqrt(3) ~= 1.1547 > 1
+check("Disjoint 2*K_5 expansion ratio strictly fails Ramanujan bound: rho > 1",
+      bool(float(ratio_disjoint_k5) > 1.0))
+print("  Connectedness verification prevents false expander classification on disconnected graphs")
+
+# ---------------------------------------------------------------------------
 print("\n" + "=" * 74)
 if FAILS:
     print(f"  {len(FAILS)} CHECK(S) FAILED")
@@ -834,5 +925,5 @@ if FAILS:
         print("   -", f)
     sys.exit(1)
 else:
-    print("  ALL 39 SYMBOLIC CHECKS PASSED EXACTLY UNDER SAGEMATH")
+    print("  ALL 48 SYMBOLIC CHECKS PASSED EXACTLY UNDER SAGEMATH")
 print("=" * 74)

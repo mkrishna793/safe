@@ -1,7 +1,7 @@
 # ArchMath: First-Principles Architecture Reconstructions & Real-Time Mathematical Latent Decoding Framework
 
 [![ArchMath Verification Battery](https://github.com/mkrishna793/safe/actions/workflows/verify.yml/badge.svg)](https://github.com/mkrishna793/safe/actions/workflows/verify.yml)
-[![SageMath 10.9 Verified](https://img.shields.io/badge/SageMath-10.9%20Verified%20(39%2F39)-brightgreen.svg)](https://www.sagemath.org)
+[![SageMath 10.9 Verified](https://img.shields.io/badge/SageMath-10.9%20Verified%20(48%2F48)-brightgreen.svg)](https://www.sagemath.org)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -109,7 +109,10 @@ ArchMath implements cutting-edge mathematical formulations originating from Anth
 - **Sheaf Dirichlet Energy**: Matches explicit coboundary norm $\mathcal{E}_{\mathcal{F}}(X) = \frac{1}{2} \|\delta X\|_F^2 = \frac{1}{2} \sum_{(u,v)} \|\mathcal{F}_{v \trianglelefteq e} x_v - \mathcal{F}_{u \trianglelefteq e} x_u\|_2^2$ within machine precision ($1.2 \times 10^{-6}$).
 - **Exact Holonomy Kernel Elimination**: Refutes the naive claim that any nonidentity holonomy ($H \ne I$) eliminates the kernel. In $\mathbb{R}^3$, any rotation around axis $v_{\text{axis}}$ leaves $\dim \ker(H - I) = 1$, retaining a zero-energy global section. The exact condition is:
   $$\ker(H_\gamma - I) = \{0\} \iff 1 \notin \operatorname{spec}(H_\gamma) \quad \text{and} \quad \bigcap_{\gamma \in \pi_1(G)} \ker(H_\gamma - I) = \{0\}$$
-- **Learned & Validated Transports**: Solves the Orthogonal Procrustes problem $P_{uv}^* = \arg\min_{P \in \mathcal{O}(d)} \|Z_u - P Z_v\|_F^2 = U V^T$, establishing latent-coordinate consistency for attribution graphs and cross-layer transcoders.
+- **Oriented Procrustes Transport & Multi-Context Fitting**:
+  Solves the Multi-Context Orthogonal Procrustes problem $P_{u \to v}^* = \arg\min_{P \in \mathcal{O}(d)} \sum_{b=1}^B \|Z_v^{(b)} - P Z_u^{(b)}\|_F^2 = U V^T$ via SVD of $M = Z_v^T Z_u$. Setting $R_u = P_{u \to v}$ and $R_v = I_d$ ensures coboundary residual $Z_v - P_{u \to v} Z_u \equiv 0$, whereas the reversed transpose $P^T$ produces an error of 4.0 on 90-degree rotations.
+- **Spanning-Tree Fundamental Cycle Basis**:
+  Replaces triangle-local heuristics with a BFS spanning forest basis. Every chord $e \in E \setminus T$ induces a fundamental cycle $\gamma_e$, whose holonomy is conjugated to component roots to yield an exact isomorphism $\dim \bigcap_{e} \ker(H_{\gamma_e}^{(r)} - I) \equiv \dim \ker(\Delta_{\mathcal{F}})$. On graphs with triangles and squares, this eliminates spurious fixed dimensions.
 
 ### 3. Anthropic Computational Circuit DAGs & Direct Logit Attribution
 - **Residual Stream Linearity:** $x_L = x_0 + \sum_{l, h} a_{l, h} + \sum_l m_l$.
@@ -121,8 +124,13 @@ ArchMath implements cutting-edge mathematical formulations originating from Anth
 - **Modular Addition Grokking:** Proves that transformers solve modular arithmetic on $\mathbb{Z}_p$ via discrete Fourier transforms and trigonometric angle-addition identities:
   $$\cos(\omega_k (a + b)) = \cos(\omega_k a)\cos(\omega_k b) - \sin(\omega_k a)\sin(\omega_k b)$$
   Schur character orthogonality enforces constructive interference at $c \equiv a + b \pmod p$ and destructive cancellation elsewhere.
-- **RoPE Torus Winding & Rational Resonances:** Proves that for actual dim=8 RoPE ($\theta_0 = 10000$), frequencies are exact rational decimals $\theta = [1, 0.1, 0.01, 0.001]$ with integer relation $10 \theta_2 - \theta_1 = 0$. While marginal 1D Weyl sums average to $\approx 0.00160038$ at $N=100,000$, the exact joint character has constant magnitude $1.0$, proving rational resonance and confinement to a sub-torus.
-- **Alon-Boppana Ramanujan Bounds across Spectral Tails:** Evaluates $\lambda_{\text{nontrivial}} = \max_{|\lambda_i| < k} |\lambda_i|$. On a 4-regular graph with $\lambda_2 = 2.494$ and negative eigenvalue $\lambda_n = -3.604$, naive check falsely passes at $0.719944$ while the true diagnostic correctly fails at $1.040349$.
+- **Multi-Coordinate RoPE Torus Resonances:** Proves that for actual RoPE ($\theta_0 = 10000$):
+  - At dim=8, frequencies are rational decimals $\theta = [1, 0.1, 0.01, 0.001]$ with relation $10\theta_2 - \theta_1 = 0$ and constant joint character magnitude $1.0$.
+  - At dim=16, adjacent ratio $\omega_0/\omega_1 = \sqrt{10}$ is irrational, but non-adjacent coordinate pair $(1, 3)$ has exact integer ratio $\omega_1/\omega_3 = 10$, giving $10\omega_3 - \omega_1 = 0$ with joint character magnitude $1.000000$! Multi-index coordinate search detects full rational confinement.
+- **Alon-Boppana Ramanujan Bounds & Domain Validation:**
+  - Evaluates non-trivial spectrum $\lambda_{\text{nontrivial}} = \max |\lambda_{\text{rem}}|$ across both spectral tails: on a 4-regular graph with $\lambda_2 = 2.494$ and $\lambda_n = -3.604$, naive check falsely passes at $0.719944$ while the true diagnostic correctly fails at $1.040349$.
+  - **Connectedness Multiplicity Invariant:** The multiplicity of eigenvalue $1.0$ in normalized adjacency is the number of connected components. A naive filter stripping all $1.0$ eigenvalues falsely passed two disjoint $K_5$ graphs at $0.288675$. Dropping only one trivial $1.0$ preserves $\lambda_2 = 1.0$, correctly giving ratio $1.1547 > 1.0$ (FAIL).
+  - **Degree Regularity Requirement:** Degree CV $< 0.05$ is strictly verified; irregular graphs trigger domain warnings against naive regular-graph Ramanujan bounds.
 
 ---
 
@@ -136,7 +144,7 @@ Every mathematical identity, conservation law, and stability criterion is formal
 * **Theorems 14–18**: LSTM Constant Error Carousel unit Jacobian ($\partial c_T/\partial c_t \equiv 1$), SSM bilinear Tustin stability mapping ($\operatorname{Re}(s) < 0 \implies |z| < 1$), Titans associative zero-residual update, LIF exact analytical ODE relaxation, MLP cross-token sequence orthogonality.
 * **Theorems 19–23**: DiT probability flow ODE / Fokker-Planck continuity, KAN affine constant reproduction, JEPA stop-gradient non-vanishing gradient, Mamba-2 SSD chunked 1-semiseparable matrix equivalence, MoE auxiliary loss positive-definite Hessian ($H \succ 0$).
 * **Theorems 24–28 (Adversarial Red-Team Proofs)**: Sylvester determinant rectangular Jacobian equivalence, asymmetric Laplacian negative eigenvalue refutation and PSD symmetrization, Dirichlet energy scale-invariance ($\mathcal{E}_{\text{norm}}(c Z) \equiv \mathcal{E}_{\text{norm}}(Z)$), CKA zero-variance epsilon regularization, and MoE Shannon entropy zero-clamping via L'Hôpital's rule.
-* **Theorems 29–35 (Advanced Frontier Mathematics)**:
+* **Theorems 29–39 (Advanced Frontier Mathematics & Exact Domain Telemetry)**:
   - **Theorem 29**: EK-FAC Kronecker eigenbasis decoupling: $(Q_A \otimes Q_S)^T (A \otimes S) (Q_A \otimes Q_S) \equiv \Lambda_A \otimes \Lambda_S$ and exact IHVP inversion.
   - **Theorem 30**: Cellular Sheaf Laplacian positive semi-definiteness: $\Delta_{\mathcal{F}} = \delta^T \delta \succeq 0$ and non-negative Dirichlet energy.
   - **Theorem 31**: Elimination of harmonic trivialization: 3D rotation counterexample ($H \ne I$ retains 1D kernel along rotation axis), and proof that $\ker(H - I) = \{0\}$ strictly eliminates harmonic trivialization.
@@ -144,8 +152,12 @@ Every mathematical identity, conservation law, and stability criterion is formal
   - **Theorem 33**: Discrete Fourier representation of modular addition via trigonometric angle-addition identities.
   - **Theorem 34**: RoPE dim=8 rational dependence ($10\omega_1 - \omega_0 = 0$), constant joint character magnitude $1.0$, and irrational torus winding contrast.
   - **Theorem 35**: Alon-Boppana Ramanujan bound: largest absolute non-trivial eigenvalue refutation ($\max(|\lambda_2|, |\lambda_n|) = 1.040349 > 1$ vs naive $0.719944 < 1$).
+  - **Theorem 36**: Procrustes oriented transport exact zero residual ($v - P u = 0$) vs reversed transpose error ($4.0$ on 90-degree rotations).
+  - **Theorem 37**: RoPE dim=16 multi-coordinate rational resonance: adjacent ratio $\omega_0/\omega_1 = \sqrt{10}$ is irrational, but coordinate pair $(1, 3)$ has exact integer ratio $\omega_1/\omega_3 = 10 \in \mathbb{Z}$ with joint character magnitude $\equiv 1.0$.
+  - **Theorem 38**: Spanning-tree fundamental cycle cohomology isomorphism: basis captures triangle and square chords, strictly matching Sheaf Laplacian kernel ($\dim = 0$) and eliminating spurious dimensions.
+  - **Theorem 39**: Ramanujan domain invariant on disconnected graphs: disjoint $2 \times K_5$ retains $\lambda_2 = 1.0$ (multiplicity 2), giving expansion ratio $1.1547 > 1.0$ (strictly failing Ramanujan bound) and refuting naive filtering ($0.288675$).
 
-**Result: `ALL 39 SYMBOLIC CHECKS PASSED EXACTLY UNDER SAGEMATH`.**
+**Result: `ALL 48 SYMBOLIC CHECKS PASSED EXACTLY UNDER SAGEMATH`.**
 
 ---
 

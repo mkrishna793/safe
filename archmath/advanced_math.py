@@ -35,6 +35,7 @@ Implements frontier mathematical methods from MIT, Stanford, Anthropic, and Oxfo
 
 from __future__ import annotations
 
+from collections import deque
 import dataclasses
 import math
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -224,9 +225,12 @@ class SheafSpectralReport:
     spectral_gap: float
     harmonic_space_dim: int                # dim ker(Delta_F)
     is_harmonic_trivial: bool              # True iff harmonic_space_dim == 0 (lambda_min > eps)
-    joint_fixed_subspace_dim: int          # dim intersection ker(H_gamma - I)
-    holonomy_trace_mean: float             # Mean trace of cycle holonomies
-    transport_fit_error: float = 0.0       # Procrustes alignment residual error
+    joint_fixed_subspace_dim: int          # dim intersection ker(H_gamma - I) over cycle basis
+    holonomy_trace_mean: float             # Mean trace of cycle holonomies / dim
+    transport_fit_error: float = 0.0       # Procrustes alignment residual error (train contexts)
+    val_transport_error: float = 0.0       # Procrustes alignment residual error (held-out contexts)
+    held_out_cycle_error: float = 0.0      # Cycle consistency residual error on fundamental cycles
+    num_fundamental_cycles: int = 0        # Count of fundamental cycles in spanning forest basis
 
 
 class CellularSheafLaplacian:
@@ -249,6 +253,12 @@ class CellularSheafLaplacian:
         For the entire graph, the harmonic space satisfies:
           ker(Delta_F) = H^0(G; F) = intersection_{gamma in pi_1(G)} ker(H_gamma - I).
         Hence over-smoothing is eliminated iff the joint fixed-point subspace is trivial: {0}.
+
+      Spanning-Tree Fundamental Cycle Basis:
+        Rather than heuristic triangle search, a complete basis of pi_1(G) is constructed via
+        a spanning forest T. Each chord e in E \\ T induces a fundamental cycle.
+        Conjugating fundamental cycle holonomies to component roots yields an exact isomorphism:
+          dim intersection_{chords} ker(H_{gamma_e}^{(r)} - I) == dim ker(Delta_F).
     """
 
     def __init__(self, num_nodes: int, dim: int, eps: float = 1e-8):
@@ -259,6 +269,20 @@ class CellularSheafLaplacian:
         # Stored restriction maps: dict mapping (u, v) -> (F_{u <= e}, F_{v <= e})
         self.restriction_maps: Dict[Tuple[int, int], Tuple[torch.Tensor, torch.Tensor]] = {}
         self.transport_error: float = 0.0
+        self.val_transport_error: float = 0.0
+        self.held_out_cycle_error: float = 0.0
+        self.fundamental_cycles: List[Dict[str, Any]] = []
+
+    def get_edge_transport(self, u: int, v: int) -> torch.Tensor:
+        """Return the orthogonal transport matrix P_{u -> v} in O(d)."""
+        if (u, v) in self.restriction_maps:
+            R_u, R_v = self.restriction_maps[(u, v)]
+            return R_v.T @ R_u
+        elif (v, u) in self.restriction_maps:
+            R_v, R_u = self.restriction_maps[(v, u)]
+            return (R_u.T @ R_v).T
+        else:
+            raise KeyError(f"No edge between node {u} and node {v}")
 
     def learn_procrustes_transports(
         self,
@@ -266,21 +290,50 @@ class CellularSheafLaplacian:
         edges: Optional[List[Tuple[int, int]]] = None,
         attn_matrix: Optional[torch.Tensor] = None,
         threshold: float = 0.05,
+        val_ratio: float = 0.0,
     ) -> float:
-        """Learn and validate orthogonal transport maps P_{uv} in O(d) via Orthogonal Procrustes.
+        """Learn and validate orthogonal transport maps P_{u -> v} in O(d) via Orthogonal Procrustes.
 
-        Given empirical token representations Z in R^{S x d}:
-          P_{uv}^* = argmin_{P in O(d)} ||Z_u - P Z_v||_F^2.
-        Closed-form solution via SVD of cross-covariance M = Z_u^T Z_v = U Sigma V^T:
-          P_{uv}^* = U V^T in O(d).
+        Given empirical token representations Z in R^{B x S x d} (or R^{S x d}):
+        For directed edge e = (u, v), restriction maps are set to:
+          R_u = P_{u -> v},  R_v = I_d.
+        The coboundary residual on representations is:
+          (delta Z)_e = R_v Z_v - R_u Z_u = Z_v - P_{u -> v} Z_u.
+
+        Objective:
+          P_{u -> v}^* = argmin_{P in O(d)} sum_{b=1}^B ||Z_v^{(b)} - P Z_u^{(b)}||_F^2.
+        Let cross-covariance matrix M = sum_b (Z_v^{(b)})^T (Z_u^{(b)}) = Z_v^T Z_u in R^{d x d}.
+        By the Orthogonal Procrustes Theorem (Schönemann 1966), with SVD M = U Sigma V^T:
+          P_{u -> v}^* = U V^T in O(d).
+
+        Orientation Invariant:
+          Evaluating ||Z_v - P_{u -> v} Z_u||_F^2 yields residual error 0 when Z_v = R Z_u.
+          Applying the reversed transpose P^T yields an error of 4.0 on 90-degree 3D rotations.
+
+        Multi-Context & Held-Out Cycle Validation:
+          - Uses all B context sequences to fit M across multi-sequence batches.
+          - If val_ratio > 0 and B >= 2, splits contexts into train and held-out validation sets.
+          - Evaluates cycle consistency residuals across fundamental cycles.
         """
         with torch.no_grad():
             Z_f = Z.detach().float()
-            if Z_f.dim() >= 3:
-                Z_f = Z_f[0]
-            S = min(self.num_nodes, Z_f.shape[0])
-            d = min(self.dim, Z_f.shape[-1])
-            Z_f = Z_f[:S, :d]
+            if Z_f.dim() == 2:
+                Z_f = Z_f.unsqueeze(0)  # (1, S, d)
+            B, S, D = Z_f.shape
+            S = min(self.num_nodes, S)
+            d = min(self.dim, D)
+            Z_f = Z_f[:, :S, :d]
+
+            if val_ratio > 0.0 and B >= 2:
+                B_val = max(1, int(round(B * val_ratio)))
+                B_train = max(1, B - B_val)
+                Z_train = Z_f[:B_train]
+                Z_val = Z_f[B_train:]
+            else:
+                B_train = B
+                B_val = 0
+                Z_train = Z_f
+                Z_val = None
 
             self.edges.clear()
             self.restriction_maps.clear()
@@ -303,20 +356,21 @@ class CellularSheafLaplacian:
                 candidate_edges = [(i, i + 1) for i in range(S - 1)]
 
             total_err = 0.0
+            val_total_err = 0.0
             count = 0
 
             for (u, v) in candidate_edges:
                 if u >= S or v >= S:
                     continue
                 self.edges.append((u, v))
-                z_u = Z_f[u].unsqueeze(0)  # (1, d)
-                z_v = Z_f[v].unsqueeze(0)  # (1, d)
+                z_u = Z_train[:, u, :]  # (B_train, d)
+                z_v = Z_train[:, v, :]  # (B_train, d)
 
-                # Cross-covariance matrix
-                M = z_u.T @ z_v  # (d, d)
+                # Cross-covariance matrix M = sum_b z_v^{(b)} (z_u^{(b)})^T = z_v.T @ z_u
+                M = z_v.T @ z_u  # (d, d)
                 try:
                     U, _, Vh = torch.linalg.svd(M)
-                    # Orthogonal Procrustes solution: P = U V^T
+                    # Correctly oriented Orthogonal Procrustes solution: P_{u -> v} = U @ Vh
                     P_uv = U @ Vh
                 except Exception:
                     P_uv = torch.eye(d, device=Z_f.device)
@@ -325,11 +379,23 @@ class CellularSheafLaplacian:
                 R_v = torch.eye(d, device=Z_f.device)
                 self.restriction_maps[(u, v)] = (R_u, R_v)
 
-                diff = (R_v @ Z_f[v]) - (R_u @ Z_f[u])
-                total_err += float(diff.pow(2).sum().item())
+                # Correctly oriented residual: Z_v - Z_u @ P_uv^T  (shape B_train, d)
+                diff_train = z_v - z_u @ P_uv.T
+                total_err += float(diff_train.pow(2).sum().item()) / B_train
                 count += 1
 
+                if Z_val is not None:
+                    z_u_val = Z_val[:, u, :]
+                    z_v_val = Z_val[:, v, :]
+                    diff_val = z_v_val - z_u_val @ P_uv.T
+                    val_total_err += float(diff_val.pow(2).sum().item()) / B_val
+
             self.transport_error = total_err / max(1, count)
+            self.val_transport_error = (val_total_err / max(1, count)) if Z_val is not None else self.transport_error
+
+            # Validate cycle consistency
+            cycles, _, _, held_err = self.extract_fundamental_cycles()
+            self.held_out_cycle_error = held_err
             return self.transport_error
 
     def build_from_attention(
@@ -390,28 +456,152 @@ class CellularSheafLaplacian:
         """Compute Sheaf Dirichlet Energy E_F(Z) = 1/2 <x, Delta_F x> = 1/2 ||delta x||^2."""
         with torch.no_grad():
             Z_f = Z.detach().float()
-            if Z_f.dim() >= 3:
-                Z_f = Z_f[0]
-            S = min(self.num_nodes, Z_f.shape[0])
-            Z_f = Z_f[:S, :self.dim]
+            if Z_f.dim() == 2:
+                Z_f = Z_f.unsqueeze(0)  # (1, S, d)
+            B, S, D = Z_f.shape
+            S = min(self.num_nodes, S)
+            d = min(self.dim, D)
+            Z_f = Z_f[:, :S, :d]
 
-            energy = 0.0
-            for (u, v), (R_u, R_v) in self.restriction_maps.items():
-                if u >= S or v >= S:
-                    continue
-                diff = (R_v @ Z_f[v]) - (R_u @ Z_f[u])
-                energy += float(diff.pow(2).sum().item())
+            total_energy = 0.0
+            for b in range(B):
+                energy = 0.0
+                for (u, v), (R_u, R_v) in self.restriction_maps.items():
+                    if u >= S or v >= S:
+                        continue
+                    diff = (R_v @ Z_f[b, v]) - (R_u @ Z_f[b, u])
+                    energy += float(diff.pow(2).sum().item())
 
-            energy *= 0.5
-            if normalized:
-                f_norm_sq = float(Z_f.pow(2).sum().item())
-                energy = energy / (f_norm_sq + self.eps)
-            return float(energy)
+                energy *= 0.5
+                if normalized:
+                    f_norm_sq = float(Z_f[b].pow(2).sum().item())
+                    energy = energy / (f_norm_sq + self.eps)
+                total_energy += energy
+
+            return float(total_energy / max(1, B))
+
+    def extract_fundamental_cycles(self) -> Tuple[List[Dict[str, Any]], int, float, float]:
+        """Extract a cycle basis of fundamental cycles using spanning trees on connected components.
+
+        For each connected component C of G = (V, E):
+          1. Constructs a BFS spanning tree T_C rooted at r = min(C).
+          2. Identifies all chord edges e = (u, v) in E(C) \\ T_C.
+          3. For each chord, builds the unique cycle: r --(tree)--> u --(chord)--> v --(tree)--> r.
+          4. Computes holonomy conjugated to root r:
+             H_{gamma_e}^{(r)} = P_{r -> v}^T P_{u -> v} P_{r -> u} in O(d).
+          5. Stacks all (H_{gamma_e}^{(r)} - I) across all chords in component C.
+             The joint fixed-point subspace on C is ker(stacked_mat), whose dimension
+             is equal to dim H^0(C; F) = dim ker(Delta_F|_C).
+
+        Returns:
+            cycle_reports: list of dicts describing each fundamental cycle
+            total_joint_fixed_dim: sum of fixed subspace dimensions across components
+            mean_holonomy_trace: mean trace / d across all cycles
+            held_out_cycle_error: mean ||H_gamma - I||_F^2 / d across cycles
+        """
+        N = self.num_nodes
+        d = self.dim
+        adj: Dict[int, List[int]] = {i: [] for i in range(N)}
+        for (u, v) in self.restriction_maps.keys():
+            if u < N and v < N:
+                adj[u].append(v)
+                adj[v].append(u)
+
+        visited = set()
+        total_joint_fixed_dim = 0
+        all_cycle_reports: List[Dict[str, Any]] = []
+        holonomy_traces: List[float] = []
+        cycle_sq_errors: List[float] = []
+
+        for root in range(N):
+            if root in visited:
+                continue
+
+            # BFS spanning tree on connected component
+            queue = deque([root])
+            visited.add(root)
+            parent: Dict[int, Optional[int]] = {root: None}
+            tree_edges = set()
+            chords: List[Tuple[int, int]] = []
+            comp_nodes: List[int] = []
+
+            while queue:
+                curr = queue.popleft()
+                comp_nodes.append(curr)
+                for nbr in adj[curr]:
+                    edge_key = (min(curr, nbr), max(curr, nbr))
+                    if nbr not in visited:
+                        visited.add(nbr)
+                        parent[nbr] = curr
+                        tree_edges.add(edge_key)
+                        queue.append(nbr)
+                    elif parent[curr] != nbr and edge_key not in tree_edges:
+                        if edge_key not in chords:
+                            chords.append(edge_key)
+
+            def get_tree_path(node: int) -> List[int]:
+                path = []
+                curr = node
+                while curr is not None:
+                    path.append(curr)
+                    curr = parent[curr]
+                return path[::-1]
+
+            def get_root_to_node_transport(node: int) -> torch.Tensor:
+                path = get_tree_path(node)
+                P = torch.eye(d)
+                for i in range(len(path) - 1):
+                    step_P = self.get_edge_transport(path[i], path[i + 1])
+                    P = step_P @ P
+                return P
+
+            stacked_H_minus_I = []
+            for (u, v) in chords:
+                P_r_u = get_root_to_node_transport(u)
+                P_u_v = self.get_edge_transport(u, v)
+                P_r_v = get_root_to_node_transport(v)
+
+                # Cycle holonomy conjugated to root r:
+                H_root = P_r_v.T @ P_u_v @ P_r_u
+                H_minus_I = H_root - torch.eye(d, device=H_root.device)
+                stacked_H_minus_I.append(H_minus_I)
+
+                tr = float(torch.trace(H_root).item()) / d
+                holonomy_traces.append(tr)
+
+                cycle_err = float(H_minus_I.pow(2).sum().item()) / d
+                cycle_sq_errors.append(cycle_err)
+
+                sv_c = torch.linalg.svdvals(H_minus_I)
+                c_fixed_dim = int((sv_c < 1e-4).sum().item())
+
+                all_cycle_reports.append({
+                    "component_root": root,
+                    "chord": (u, v),
+                    "holonomy_trace": tr,
+                    "fixed_subspace_dim": c_fixed_dim,
+                    "cycle_error": cycle_err,
+                })
+
+            if stacked_H_minus_I:
+                stacked_mat = torch.cat(stacked_H_minus_I, dim=0)  # (K*d, d)
+                sv_joint = torch.linalg.svdvals(stacked_mat)
+                comp_fixed = int((sv_joint < 1e-4).sum().item())
+            else:
+                # Tree or isolated vertex has dim H^0(T; F) = d
+                comp_fixed = d
+
+            total_joint_fixed_dim += comp_fixed
+
+        mean_tr = float(sum(holonomy_traces) / len(holonomy_traces)) if holonomy_traces else 1.0
+        held_err = float(sum(cycle_sq_errors) / len(cycle_sq_errors)) if cycle_sq_errors else 0.0
+        self.fundamental_cycles = all_cycle_reports
+        return all_cycle_reports, total_joint_fixed_dim, mean_tr, held_err
 
     def spectral_analysis(self, device: Any = "cpu") -> SheafSpectralReport:
         """Compute algebraic connectivity and verify elimination of harmonic triviality.
 
-        Evaluates the exact condition ker(H_gamma - I) = {0} on cycle holonomies.
+        Uses the complete fundamental cycle basis on the graph's spanning forest.
         """
         Delta = self.assemble_laplacian(device=device)
         try:
@@ -425,42 +615,7 @@ class CellularSheafLaplacian:
             gap = 0.0
             null_dim = self.dim
 
-        # Extract cycle holonomies and compute exact fixed-point kernels ker(H - I)
-        holonomy_traces = []
-        cycle_fixed_dims = []
-        stacked_H_minus_I = []
-
-        for i in range(min(self.num_nodes, 8)):
-            for j in range(i + 1, min(self.num_nodes, 8)):
-                for k in range(j + 1, min(self.num_nodes, 8)):
-                    if (i, j) in self.restriction_maps and (j, k) in self.restriction_maps and (i, k) in self.restriction_maps:
-                        R_ij_u, R_ij_v = self.restriction_maps[(i, j)]
-                        R_jk_u, R_jk_v = self.restriction_maps[(j, k)]
-                        R_ik_u, R_ik_v = self.restriction_maps[(i, k)]
-                        # Cycle holonomy around triangle: U_ij * U_jk * U_ki
-                        U_ij = R_ij_u.T @ R_ij_v
-                        U_jk = R_jk_u.T @ R_jk_v
-                        U_ki = (R_ik_u.T @ R_ik_v).T
-                        cycle_H = U_ij @ U_jk @ U_ki
-
-                        holonomy_traces.append(float(torch.trace(cycle_H).item()) / self.dim)
-
-                        # Check ker(H - I) = {0}
-                        H_minus_I = cycle_H - torch.eye(self.dim, device=cycle_H.device)
-                        sv = torch.linalg.svdvals(H_minus_I)
-                        cycle_fixed_dim = int((sv < 1e-4).sum().item())
-                        cycle_fixed_dims.append(cycle_fixed_dim)
-                        stacked_H_minus_I.append(H_minus_I)
-
-        mean_tr = float(sum(holonomy_traces) / len(holonomy_traces)) if holonomy_traces else 1.0
-
-        # Joint intersection of fixed-point subspaces: ker([H_1 - I; H_2 - I; ...])
-        if stacked_H_minus_I:
-            stacked_mat = torch.cat(stacked_H_minus_I, dim=0)  # (K*d, d)
-            sv_joint = torch.linalg.svdvals(stacked_mat)
-            joint_fixed_dim = int((sv_joint < 1e-4).sum().item())
-        else:
-            joint_fixed_dim = null_dim
+        cycles, joint_fixed_dim, mean_tr, held_err = self.extract_fundamental_cycles()
 
         return SheafSpectralReport(
             num_nodes=self.num_nodes,
@@ -475,6 +630,9 @@ class CellularSheafLaplacian:
             joint_fixed_subspace_dim=joint_fixed_dim,
             holonomy_trace_mean=mean_tr,
             transport_fit_error=self.transport_error,
+            val_transport_error=self.val_transport_error,
+            held_out_cycle_error=held_err,
+            num_fundamental_cycles=len(cycles),
         )
 
 
@@ -611,6 +769,23 @@ class CircuitAttributionGraph:
 # =========================================================================== #
 
 @dataclasses.dataclass
+class RamanujanDiagnosticReport:
+    """Ramanujan Expander Diagnostic and Domain Validation Report."""
+    is_ramanujan: bool                      # True iff connected, regular, and ratio <= 1.0
+    expansion_ratio: float                  # lambda_nontrivial / (2*sqrt(k - 1) / k)
+    is_connected: bool                      # True iff multiplicity of lambda = 1.0 is exactly 1
+    is_regular: bool                        # True iff degree CV < 0.05
+    is_bipartite: bool                      # True iff multiplicity of lambda = -1.0 is >= 1
+    num_components: int                     # Multiplicity of lambda = 1.0
+    avg_degree: float                       # k_avg
+    degree_cv: float                        # sigma_k / k_avg
+    lambda_nontrivial: float                # max_{non-trivial} |lambda_i|
+    alon_boppana_bound: float               # 2*sqrt(k - 1) / k
+    domain_valid: bool                      # True iff graph satisfies domain invariants (connected & regular)
+    domain_warning: Optional[str] = None    # Warning if domain invariants are violated
+
+
+@dataclasses.dataclass
 class HarmonicSpectrumReport:
     """Harmonic Fourier and Torus Winding Report."""
     modulus_p: int
@@ -620,6 +795,11 @@ class HarmonicSpectrumReport:
     weyl_equidistribution_metric: float
     torus_geodesic_distance: float
     ramanujan_expansion_ratio: float
+    is_rational_dependent: bool = False
+    joint_character_magnitude: float = 0.0
+    is_ramanujan: bool = False
+    is_connected: bool = True
+    is_regular: bool = True
 
 
 class HarmonicTorusSpectrum:
@@ -629,7 +809,9 @@ class HarmonicTorusSpectrum:
        F_k = (1 / sqrt(p)) * sum_{x=0}^{p-1} f(x) * exp(-2*pi*i*k*x / p).
     2. Analyzes RoPE irrational torus winding on T^{d/2}:
        phi(m) = (m*omega_1, ..., m*omega_{d/2}) mod 2*pi.
-    3. Evaluates Ramanujan expander spectral bounds for attention routing.
+       Evaluates multi-index rational resonance spectra across all coordinate pairs.
+    3. Evaluates Ramanujan expander spectral bounds with strict domain validation:
+       connectedness, degree regularity, and bidirectional spectral tails.
     """
 
     @staticmethod
@@ -684,9 +866,12 @@ class HarmonicTorusSpectrum:
         Computes:
         1. Marginal Weyl sum metric: W_N = (1 / (d/2)) sum_k |(1/N) sum_m exp(i*m*omega_k)|.
         2. Mean torus geodesic distance between consecutive position steps.
-        3. Joint character resonance magnitude: max_{c != 0} |(1/N) sum_m exp(i*m*c^T omega)|.
-           Detects rational dependence (e.g. for dim=8, base=10000, omega = [1, 0.1, 0.01, 0.001],
-           c = [-1, 10, 0, 0] yields an exact character magnitude of 1.0, proving rational confinement).
+        3. Multi-Coordinate Joint Character Resonance Analysis:
+           Searches all coordinate pairs (i, j) with 0 <= i < j < d/2 for integer and rational
+           relations: c_j * omega_j - c_i * omega_i == 0.
+           Computes joint character magnitude: max_{c != 0} |(1/N) sum_m exp(i*m*c^T omega)|.
+           Detects rational confinement across arbitrary coordinate pairs (e.g. coordinates 1 and 3
+           at dim=16 having 10*omega_3 - omega_1 == 0 with joint character magnitude exactly 1.0).
         """
         half_dim = dim // 2
         indices = torch.arange(half_dim, dtype=torch.float32)
@@ -705,36 +890,74 @@ class HarmonicTorusSpectrum:
         wrapped_dist = torch.minimum(omega_mod, 2.0 * math.pi - omega_mod)
         torus_dist = float(torch.sqrt(torch.sum(wrapped_dist.pow(2))).item())
 
-        # 3. Joint Character Resonance Analysis
-        # Check standard integer resonant relation: c = (-1, round(omega[0]/omega[1]), 0, ...)
+        # 3. Multi-Coordinate Joint Character Resonance Analysis
         is_rat_dep = False
-        joint_char_mag = 0.0
-        if half_dim >= 2:
-            ratio = float(omega[0] / omega[1])
-            ratio_int = round(ratio)
-            if abs(ratio - ratio_int) < 1e-4:
-                is_rat_dep = True
-                # Integer linear combination: ratio_int * omega[1] - omega[0] == 0
-                c_vec = torch.zeros(half_dim, dtype=torch.float32)
-                c_vec[0] = -1.0
-                c_vec[1] = float(ratio_int)
-                scalar_angle = float(torch.sum(c_vec * omega).item())
-                joint_angle = positions * scalar_angle  # (N, 1)
-                joint_phase = torch.polar(torch.ones_like(joint_angle), joint_angle)
-                joint_char_mag = float(torch.abs(torch.mean(joint_phase)).item())
+        max_joint_char_mag = 0.0
 
+        if half_dim >= 2:
+            for i in range(half_dim):
+                for j in range(i + 1, half_dim):
+                    w_i = float(omega[i].item())
+                    w_j = float(omega[j].item())
+                    ratio = w_i / (w_j + 1e-12)
+
+                    cand_pairs = []
+                    ratio_int = round(ratio)
+                    if 1 <= ratio_int <= 10000 and abs(ratio - ratio_int) < 1e-3:
+                        cand_pairs.append((1, ratio_int))
+
+                    # Test rational ratios p/q for q in 1..20
+                    for q in range(1, 21):
+                        p = round(q * ratio)
+                        if 1 <= p <= 10000 and abs(q * ratio - p) < 1e-3:
+                            cand_pairs.append((q, p))
+
+                    for c_i, c_j in set(cand_pairs):
+                        c_vec = torch.zeros(half_dim, dtype=torch.float32)
+                        c_vec[i] = -float(c_i)
+                        c_vec[j] = float(c_j)
+                        scalar_freq = float(torch.sum(c_vec * omega).item())
+                        joint_angle = positions * scalar_freq  # (N, 1)
+                        joint_phase = torch.polar(torch.ones_like(joint_angle), joint_angle)
+                        char_mag = float(torch.abs(torch.mean(joint_phase)).item())
+
+                        if char_mag > max_joint_char_mag:
+                            max_joint_char_mag = char_mag
+
+                        if abs(scalar_freq) < 1e-4 or char_mag > 0.9:
+                            is_rat_dep = True
+
+        joint_char_mag = max_joint_char_mag
         if return_joint:
             return mean_weyl, torus_dist, joint_char_mag, is_rat_dep
         return mean_weyl, torus_dist
 
     @staticmethod
-    def ramanujan_expansion_ratio(attn_matrix: torch.Tensor) -> float:
-        """Compute Ramanujan graph expansion ratio rho = lambda_nontrivial / (2*sqrt(k - 1) / k).
+    def ramanujan_expansion_ratio(
+        attn_matrix: torch.Tensor,
+        return_report: bool = False,
+        regularity_threshold: float = 0.05,
+    ) -> Union[float, RamanujanDiagnosticReport]:
+        """Compute Ramanujan graph expansion ratio rho with rigorous domain validation.
 
-        Rigorously evaluates the largest absolute non-trivial eigenvalue:
-          lambda_nontrivial = max_{|lambda| < 1.0 - eps} |lambda_i|.
-        Prevents false passes where lambda_2 is small but negative eigenvalues (e.g. lambda_n)
-        exceed the Alon-Boppana bound. If rho <= 1.0, the graph is strictly Ramanujan.
+        Domain Invariants:
+        1. Connectedness:
+           For the normalized adjacency A_norm = D^{-1/2} A D^{-1/2}, the multiplicity of
+           eigenvalue lambda = 1.0 is the number of connected components.
+           If multiplicity > 1, the graph is disconnected, lambda_2 = 1.0, spectral gap = 0,
+           and the graph strictly fails the Ramanujan expander property.
+        2. Regularity:
+           The Alon-Boppana theorem (Lubotzky et al. 1988) strictly applies to k-regular graphs.
+           We evaluate degree coefficient of variation CV_k = sigma_k / k_avg.
+           If CV_k >= regularity_threshold, the graph is irregular; average degree does NOT
+           automatically validate the Ramanujan bound.
+        3. Spectral Tails (Positive and Negative):
+           Trivial eigenvalues: exactly ONE +1.0 (principal Perron-Frobenius eigenvalue),
+           and if bipartite, ONE -1.0.
+           The non-trivial eigenvalues are the remaining eigenvalues:
+             lambda_nontrivial = max_{lambda in Spec_rem} |lambda|.
+           If disconnected, remaining eigenvalues contain the other +1.0's, correctly yielding
+           lambda_nontrivial = 1.0, which strictly violates the Ramanujan bound 2*sqrt(k-1)/k < 1.0.
         """
         with torch.no_grad():
             A = attn_matrix.detach().float()
@@ -744,32 +967,91 @@ class HarmonicTorusSpectrum:
                 A = A[0]
             S = A.shape[0]
             if S <= 2:
-                return 1.0
+                report = RamanujanDiagnosticReport(
+                    is_ramanujan=True,
+                    expansion_ratio=1.0,
+                    is_connected=True,
+                    is_regular=True,
+                    is_bipartite=False,
+                    num_components=1,
+                    avg_degree=1.0,
+                    degree_cv=0.0,
+                    lambda_nontrivial=0.0,
+                    alon_boppana_bound=1.0,
+                    domain_valid=True,
+                )
+                return report if return_report else 1.0
 
             # Symmetrize
             A_sym = 0.5 * (A + A.T)
             deg = torch.clamp_min(A_sym.sum(dim=-1), 1e-6)
-            D_inv_sqrt = torch.diag(1.0 / torch.sqrt(deg))
+            k_avg = float(deg.mean().item())
+            k_std = float(deg.std().item())
+            degree_cv = k_std / (k_avg + 1e-8)
+            is_regular = degree_cv < regularity_threshold
 
             # Normalized adjacency A_norm = D^{-1/2} A D^{-1/2}
+            D_inv_sqrt = torch.diag(1.0 / torch.sqrt(deg))
             A_norm = D_inv_sqrt @ A_sym @ D_inv_sqrt
             try:
                 eigs = torch.linalg.eigvalsh(A_norm)
-                # Exclude trivial Perron-Frobenius eigenvalue |lambda| >= 1.0 - 1e-4
-                nontrivial_mask = torch.abs(torch.abs(eigs) - 1.0) > 1e-4
-                if nontrivial_mask.any():
-                    # Correct largest absolute non-trivial eigenvalue: max(|lambda_2|, |lambda_n|)
-                    lambda_nontrivial = float(torch.max(torch.abs(eigs[nontrivial_mask])).item())
-                else:
-                    lambda_nontrivial = 0.0
+                eigs_sorted = torch.sort(eigs).values
             except Exception:
-                return 1.0
+                eigs_sorted = torch.zeros(S)
 
-            k_avg = float(deg.mean().item())
+            # Connectedness check: multiplicity of 1.0
+            mult_one = int((torch.abs(eigs_sorted - 1.0) < 1e-4).sum().item())
+            num_components = max(1, mult_one)
+            is_connected = (mult_one == 1)
+
+            # Bipartiteness check: multiplicity of -1.0
+            mult_neg_one = int((torch.abs(eigs_sorted - (-1.0)) < 1e-4).sum().item())
+            is_bipartite = (mult_neg_one >= 1)
+
+            # Non-trivial eigenvalues:
+            # Drop exactly ONE +1.0 (the principal trivial eigenvalue)
+            # If bipartite, drop ONE -1.0 (the trivial bipartite eigenvalue)
+            # All other eigenvalues (including duplicate 1.0s on disconnected graphs) remain!
+            nontrivial_eigs = eigs_sorted[:-1]
+            if is_bipartite and len(nontrivial_eigs) > 0:
+                nontrivial_eigs = nontrivial_eigs[1:]
+
+            if len(nontrivial_eigs) > 0:
+                lambda_nontrivial = float(torch.max(torch.abs(nontrivial_eigs)).item())
+            else:
+                lambda_nontrivial = 0.0
+
             if k_avg <= 1.0:
-                return 1.0
+                bound = 1.0
+                ratio = 1.0
+            else:
+                bound = (2.0 * math.sqrt(max(0.0, k_avg - 1.0))) / k_avg
+                ratio = lambda_nontrivial / (bound + 1e-8)
 
-            # Alon-Boppana Ramanujan bound: 2*sqrt(k - 1) / k
-            bound = (2.0 * math.sqrt(max(0.0, k_avg - 1.0))) / k_avg
-            ratio = lambda_nontrivial / (bound + 1e-8)
+            domain_valid = is_connected and is_regular
+            is_ramanujan = domain_valid and (ratio <= 1.0)
+
+            warning = None
+            if not is_connected:
+                warning = f"Domain invalid: Graph is disconnected (num_components={num_components}, lambda_2=1.0). Alon-Boppana expander property fails."
+            elif not is_regular:
+                warning = f"Domain invalid: Degree distribution is irregular (CV={degree_cv:.4f} >= {regularity_threshold}). Standard regular-graph Ramanujan bound is heuristic."
+
+            report = RamanujanDiagnosticReport(
+                is_ramanujan=is_ramanujan,
+                expansion_ratio=float(ratio),
+                is_connected=is_connected,
+                is_regular=is_regular,
+                is_bipartite=is_bipartite,
+                num_components=num_components,
+                avg_degree=k_avg,
+                degree_cv=degree_cv,
+                lambda_nontrivial=lambda_nontrivial,
+                alon_boppana_bound=bound,
+                domain_valid=domain_valid,
+                domain_warning=warning,
+            )
+
+            if return_report:
+                return report
             return float(ratio)

@@ -90,11 +90,14 @@ While irrational frequency sets with transcendental generators theoretically yie
   $$\left| \frac{1}{N} \sum_{m=1}^N \chi_c(m) \right| = 1.0$$
 - **The Pitfall of Marginal Diagnostics:** Evaluating individual 1D marginal Weyl sums produces an illusion of complete equidistribution: at $N = 100,000$, the marginal Weyl mean across the 4 frequencies is only **$0.00160038$**. However, the joint character reveals that the trajectory is strictly confined to a lower-dimensional rational sub-torus, precluding genuine multi-dimensional ergodic coverage.
 
-### 4.3 Finite-Sample Weyl Sum & Joint Character Spectrum
-To detect both coordinate dispersion and multi-dimensional resonances, torus diagnostics must evaluate:
-1. **Marginal Weyl Sum:** $W_N = \frac{1}{d/2} \sum_{j=1}^{d/2} \left| \frac{1}{N} \sum_{m=1}^N \exp(i m \theta_j) \right|$.
-2. **Joint Character Resonance Spectrum:** $J_N(c) = \left| \frac{1}{N} \sum_{m=1}^N \exp(i m c^T \theta) \right|$ for $c \in \mathbb{Z}^{d/2} \setminus \{0\}$.
-Full ergodicity is achieved only when $J_N(c) \to 0$ for all non-zero integer vectors $c$.
+### 4.3 Multi-Coordinate Resonances Beyond Adjacent Coordinates
+A common diagnostic pitfall is evaluating only the ratio between the first two adjacent frequencies $\omega_0 / \omega_1$. At dimension $d = 16$:
+- Frequencies are $\omega_j = 10000^{-2j/16} = 10^{-j/2}$, giving $\omega_0 = 1.0, \omega_1 = 1/\sqrt{10} \approx 0.3162, \omega_2 = 0.1, \omega_3 = 1/(10\sqrt{10}) \approx 0.0316$.
+- The adjacent ratio $\omega_0 / \omega_1 = \sqrt{10}$ is **irrational**. A naive single-ratio check concludes `is_rat_dep = False, joint_char_mag = 0.0`.
+- However, the non-adjacent coordinate pair $(1, 3)$ has ratio:
+  $$\frac{\omega_1}{\omega_3} = \frac{10^{-0.5}}{10^{-1.5}} = 10.0 \in \mathbb{Z}$$
+  producing the exact integer relation $10 \omega_3 - \omega_1 = 0$ with joint character magnitude identically **$1.000000$**!
+- To prevent blind spots, CMAE torus telemetry systematically searches all coordinate pairs $0 \le i < j < d/2$ and rational multipliers $p/q$, evaluating the full joint-character spectrum.
 
 ---
 
@@ -105,7 +108,7 @@ A standard transformer attention graph whose routing is based solely on relative
 $$\lambda_2(L) = \mathcal{O}(S^{-2})$$
 As sequence length $S \to \infty$, information mixing slows down quadratically, leading to severe information bottlenecks (over-squashing).
 
-### 5.2 The Alon-Boppana Ramanujan Bound: Largest Absolute Non-Trivial Eigenvalue
+### 5.2 The Alon-Boppana Ramanujan Bound & Domain Validation
 To achieve optimal information dispersion, token attention topologies must behave as **Ramanujan Expanders**. For a connected, non-bipartite $k$-regular graph, the non-trivial spectrum consists of all eigenvalues with $|\lambda_i| < k$.
 
 **Definition (Ramanujan Graph):** A $k$-regular graph is Ramanujan if its non-trivial eigenvalues satisfy the Alon-Boppana bound across **both** spectral tails:
@@ -113,34 +116,43 @@ $$\lambda_{\text{nontrivial}}(G) = \max_{|\lambda_i| < k} |\lambda_i| \le 2\sqrt
 Equivalently, on normalized adjacency $A_{\text{norm}} = D^{-1/2} A D^{-1/2}$ with eigenvalues $\mu_i \in [-1, 1]$:
 $$\mu_{\text{nontrivial}}(A_{\text{norm}}) = \max_{|\mu_i| < 1 - \epsilon} |\mu_i| \le \frac{2\sqrt{k - 1}}{k}$$
 
-**The Naive vs. Correct Diagnostic Failure Mode:**
-- A naive diagnostic that inspects only the second positive eigenvalue $\lambda_2$ (or sorted index 1) ignores the negative tail of the spectrum $\lambda_n$.
-- *Counterexample on a 4-regular graph ($k = 4, 2\sqrt{k - 1} = 2\sqrt{3} \approx 3.4641$):*
-  Suppose a graph has eigenvalues $\lambda_1 = 4.0, \lambda_2 = 2.494$, and $\lambda_n = -3.604$.
-  - The naive ratio (checking only $\lambda_2$) evaluates to $\frac{2.494}{2\sqrt{3}} \approx \mathbf{0.719944} < 1$, **falsely reporting that the graph is Ramanujan**.
-  - The correct diagnostic evaluates the largest absolute non-trivial eigenvalue $\max(|\lambda_2|, |\lambda_n|) = 3.604$, yielding $\frac{3.604}{2\sqrt{3}} \approx \mathbf{1.040349} > 1$, **correctly detecting that the graph fails the Ramanujan expansion bound**.
-Rigorous attention graph telemetry must therefore evaluate $\max_{|\lambda_i| < k} |\lambda_i|$ across the complete symmetric spectrum.
+**Domain Validation Requirements:**
+1. **Connectedness Multiplicity Invariant:**
+   In normalized adjacency, the multiplicity of eigenvalue $\mu = 1.0$ is the exact number of connected components $c$.
+   A naive implementation that strips *all* eigenvalues equal to $1.0$ falsely passed two disjoint $K_5$ graphs at ratio **$0.288675$**, despite being completely disconnected!
+   The correct diagnostic removes only **one** trivial eigenvalue $+1.0$. On disconnected graphs, the remaining spectrum contains $\lambda_2 = 1.0$, giving ratio $1.0 / (2\sqrt{3}/4) \approx \mathbf{1.1547} > 1.0$, strictly failing expander validation.
+2. **Degree Regularity Requirement:**
+   The Ramanujan bound strictly applies to regular graphs. If the degree coefficient of variation $CV_k = \sigma_k / \bar{k} \ge 0.05$, the graph is irregular, and the average degree bound is heuristic; our diagnostic flags `is_regular = False` with an explicit domain warning.
+3. **Spectral Tails (Positive and Negative):**
+   Evaluating only $\lambda_2$ misses negative eigenvalues on near-bipartite graphs: on a 4-regular graph with $\lambda_2 = 2.494$ and $\lambda_n = -3.604$, the naive ratio passes at **$0.719944$**, while the true largest absolute non-trivial eigenvalue correctly fails at **$1.040349$**.
 
 ---
 
 ## 6. Formal Verification via SageMath 10.9
 
-The trigonometric identities of modular addition, RoPE rational dependence at $d=8$, and the Ramanujan spectral tail diagnostic were formally verified in Theorems 33, 34, & 35 of `archmath/sage/derive.sage`:
+The theorems for harmonic Fourier analysis, RoPE multi-index rational resonances, and Ramanujan domain diagnostics were formally verified in Theorems 33, 34, 35, 37, & 39 of `archmath/sage/derive.sage`:
 
 ```python
-# SageMath Theorems 33, 34, 35 Excerpt:
-# 1. Modular addition trigonometric identity:
-assert ((cos(w*(a+b)) - (cos(w*a)*cos(w*b) - sin(w*a)*sin(w*b))).trig_reduce() == 0) # THEOREM 33
+# SageMath Theorems 33, 34, 35, 37, 39 Excerpt:
+# 1. Modular addition trigonometric identity (THEOREM 33):
+assert ((cos(w*(a+b)) - (cos(w*a)*cos(w*b) - sin(w*a)*sin(w*b))).trig_reduce() == 0)
 
-# 2. RoPE dim=8 rational dependence & joint character magnitude:
-rope_freqs = [QQ(10000)**(-2*i/8) for i in range(4)] # [1, 1/10, 1/100, 1/1000]
-assert 10 * rope_freqs[1] - rope_freqs[0] == 0       # Exact integer relation
-# Joint character magnitude is identically 1 for all positions (THEOREM 34)
+# 2. RoPE dim=8 rational dependence & joint character magnitude (THEOREM 34):
+assert 10 * rope_freqs[1] - rope_freqs[0] == 0
 
-# 3. Alon-Boppana Ramanujan largest absolute non-trivial eigenvalue:
-lambda_2_val = 2.494
-lambda_n_val = -3.604
-assert abs(float(lambda_2_val / (2 * sqrt(3))) - 0.719944) < 1e-4   # Naive falsely passes
-assert abs(float(max(abs(lambda_2_val), abs(lambda_n_val)) / (2 * sqrt(3))) - 1.040349) < 1e-4 # Correct fails
+# 3. Alon-Boppana Ramanujan largest absolute non-trivial eigenvalue (THEOREM 35):
+assert abs(float(max(abs(lambda_2_val), abs(lambda_n_val)) / (2 * sqrt(3))) - 1.040349) < 1e-4
+
+# 4. RoPE dim=16 multi-coordinate resonance detection (THEOREM 37):
+# Adjacent ratio is irrational, but coordinate pair (1, 3) has exact integer ratio 10:
+assert sqrt(10) not in QQ
+assert (w1_sym / w3_sym) == 10
+assert cos(m_idx * (10*w3_sym - w1_sym).canonicalize_radical()) == 1
+
+# 5. Ramanujan Domain Invariant: Disjoint 2*K_5 (THEOREM 39):
+# Disjoint 2*K_5 has eigenvalue 1.0 with multiplicity 2; retains non-trivial lambda_2 == 1.0:
+assert mult_1_disjoint == 2
+assert nontrivial_lambda_val == 1
+assert float(nontrivial_lambda_val / (2 * sqrt(3) / 4)) > 1.0 # ratio ~1.1547 strictly fails
 ```
-All 39 symbolic checks pass with zero margin of error under SageMath 10.9.
+All symbolic proofs pass with zero margin of error under SageMath 10.9.

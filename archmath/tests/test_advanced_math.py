@@ -16,6 +16,7 @@ from archmath.advanced_math import (
     CellularSheafLaplacian,
     CircuitAttributionGraph,
     HarmonicTorusSpectrum,
+    RamanujanDiagnosticReport,
 )
 
 
@@ -259,6 +260,163 @@ def test_ramanujan_largest_absolute_nontrivial_eigenvalue():
     assert correct_ratio > 1.0  # Correct diagnostic detects violation of Ramanujan property
 
 
+def test_procrustes_transport_direction_and_batch_fitting():
+    """Verify Procrustes transport orientation and multi-context batch fitting.
+
+    1. Two-vertex, 3-dimensional example:
+       When Z_v = Z_u R^T for true rotation R in SO(3), the correctly oriented Procrustes transport
+       P_{u -> v} yields residual error 0.0, whereas reversed transpose P^T yields error 4.0.
+    2. Multi-context batch fitting:
+       Providing batched Z in R^{B x S x d} fits cross-covariance across all B contexts
+       and held-out context validation evaluates residual error on test contexts.
+    """
+    torch.manual_seed(42)
+    d = 3
+    num_nodes = 2
+    theta = 0.8
+    R_true = torch.tensor([
+        [math.cos(theta), -math.sin(theta), 0.0],
+        [math.sin(theta),  math.cos(theta), 0.0],
+        [0.0,             0.0,             1.0],
+    ], dtype=torch.float32)
+
+    # 1. Single context 2-vertex example
+    z0 = torch.tensor([[1.0, 0.0, 0.0]], dtype=torch.float32)
+    z1 = z0 @ R_true.T
+    Z_pair = torch.cat([z0, z1], dim=0)  # (2, 3)
+
+    sheaf = CellularSheafLaplacian(num_nodes=2, dim=3)
+    train_err = sheaf.learn_procrustes_transports(Z_pair, edges=[(0, 1)])
+    assert math.isclose(train_err, 0.0, abs_tol=1e-5), f"Expected 0.0 error, got {train_err}"
+
+    # Verify that applying backwards / reversed transport yields error 4.0
+    P_learned = sheaf.get_edge_transport(0, 1)
+    assert torch.allclose(P_learned, R_true, atol=1e-4)
+
+    # Backwards transport error: ||z1 - z0 @ P_learned||^2 where z1 = z0 @ R^T
+    diff_backwards = z1 - z0 @ P_learned  # R - R^T on [1, 0, 0] has norm squared = 2*(1 - cos(2*theta)) ~= 4.0 for 90-deg
+    # For 90 degrees:
+    theta_90 = math.pi / 2
+    R_90 = torch.tensor([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+    z0_90 = torch.tensor([[1.0, 0.0, 0.0]])
+    z1_90 = z0_90 @ R_90.T  # [0, 1, 0]
+    # Correct transport: z1_90 - z0_90 @ R_90.T == 0
+    assert torch.allclose(z1_90, z0_90 @ R_90.T)
+    # Reversed transport: z1_90 - z0_90 @ R_90 = [0, 1, 0] - [0, -1, 0] = [0, 2, 0] -> norm^2 = 4.0!
+    diff_reversed = z1_90 - z0_90 @ R_90
+    assert math.isclose(float(diff_reversed.pow(2).sum().item()), 4.0, abs_tol=1e-5)
+
+    # 2. Multi-context batch fitting
+    B = 10
+    Z_batch = torch.randn(B, num_nodes, d)
+    # Enforce exact relation on all batch contexts
+    Z_batch[:, 1, :] = Z_batch[:, 0, :] @ R_true.T
+
+    sheaf_multi = CellularSheafLaplacian(num_nodes=2, dim=3)
+    err_multi = sheaf_multi.learn_procrustes_transports(Z_batch, edges=[(0, 1)], val_ratio=0.3)
+    assert math.isclose(err_multi, 0.0, abs_tol=1e-5)
+    assert math.isclose(sheaf_multi.val_transport_error, 0.0, abs_tol=1e-5)
+
+
+def test_rope_resonance_multi_coordinate_search_dim16():
+    """Verify RoPE resonance detection across multi-coordinate pairs at dim=16.
+
+    At dim=16, base=10000:
+    Frequencies are omega = [1.0, 0.3162, 0.1, 0.0316, 0.01, ...].
+    Pair (0, 1) has ratio sqrt(10) (irrational), BUT pair (1, 3) has ratio:
+      omega_1 / omega_3 = 10^(-0.5) / 10^(-1.5) = 10.0 in Z!
+    Multi-coordinate resonance search must detect relation (1, 3) with joint character magnitude 1.0.
+    """
+    dim = 16
+    seq_len = 500
+    mean_w, t_dist, joint_mag, is_rat = HarmonicTorusSpectrum.rope_torus_winding(
+        dim=dim, seq_len=seq_len, base=10000.0, return_joint=True
+    )
+    assert is_rat is True, "Expected multi-index search to detect rational dependence at dim=16"
+    assert math.isclose(joint_mag, 1.0, abs_tol=1e-4), f"Expected joint character magnitude 1.0, got {joint_mag}"
+
+
+def test_sheaf_fundamental_cycle_basis_triangle_plus_square():
+    """Verify BFS spanning-tree fundamental cycle basis on graph with triangle + square.
+
+    Graph topology on 5 vertices:
+      Triangle: (0, 1), (1, 2), (0, 2)
+      Square:   (0, 2), (2, 3), (3, 4), (0, 4)
+    With generic orthogonal transports:
+      The fundamental cycle basis captures chords for both the triangle and the square.
+      The joint fixed-point subspace dimension strictly matches harmonic_space_dim (dim ker Delta_F = 0).
+      Triangle-local heuristics would miss the square and falsely report spurious dimensions.
+    """
+    torch.manual_seed(123)
+    num_nodes = 5
+    dim = 3
+    edges = [(0, 1), (1, 2), (0, 2), (2, 3), (3, 4), (0, 4)]
+
+    sheaf = CellularSheafLaplacian(num_nodes=num_nodes, dim=dim)
+    sheaf.edges = list(edges)
+
+    for (u, v) in edges:
+        K = torch.randn(dim, dim) * 0.5
+        K = 0.5 * (K - K.T)
+        R_u = torch.matrix_exp(K)
+        R_v = torch.eye(dim)
+        sheaf.restriction_maps[(u, v)] = (R_u, R_v)
+
+    # Full spectral report using fundamental cycle basis
+    report = sheaf.spectral_analysis()
+    assert report.num_fundamental_cycles == 2  # One chord for triangle, one for square
+    assert report.harmonic_space_dim == 0
+    assert report.joint_fixed_subspace_dim == report.harmonic_space_dim
+    assert report.is_harmonic_trivial is True
+
+
+def test_ramanujan_domain_validation_disconnected_k5_and_regularity():
+    """Verify Ramanujan domain validation:
+
+    1. Disjoint 2*K_5 graph is disconnected (lambda_2 = 1.0), so spectral gap is 0.
+       The correct diagnostic rejects it: is_connected=False, ratio > 1.0 (fails expander bound).
+       In contrast, naive filtering of all 1.0s falsely passed at 0.288675.
+    2. Single K_5 graph is connected and 4-regular: passes at ratio ~0.288675.
+    3. Irregular graph: degree CV >= 0.05 fails domain validation.
+    """
+    # 1. Disjoint 2*K_5
+    A_disjoint = torch.zeros((10, 10))
+    A_disjoint[:5, :5] = 1.0 - torch.eye(5)
+    A_disjoint[5:, 5:] = 1.0 - torch.eye(5)
+
+    rep_disjoint = HarmonicTorusSpectrum.ramanujan_expansion_ratio(A_disjoint, return_report=True)
+    assert isinstance(rep_disjoint, RamanujanDiagnosticReport)
+    assert rep_disjoint.is_connected is False
+    assert rep_disjoint.num_components == 2
+    assert rep_disjoint.domain_valid is False
+    assert rep_disjoint.is_ramanujan is False
+    assert rep_disjoint.expansion_ratio > 1.0
+    assert math.isclose(rep_disjoint.expansion_ratio, 1.1547, abs_tol=1e-3)
+    assert "disconnected" in rep_disjoint.domain_warning.lower()
+
+    # Plain float call also fails: ratio > 1.0
+    ratio_float = HarmonicTorusSpectrum.ramanujan_expansion_ratio(A_disjoint, return_report=False)
+    assert ratio_float > 1.0
+
+    # 2. Single K_5
+    A_k5 = 1.0 - torch.eye(5)
+    rep_k5 = HarmonicTorusSpectrum.ramanujan_expansion_ratio(A_k5, return_report=True)
+    assert rep_k5.is_connected is True
+    assert rep_k5.is_regular is True
+    assert rep_k5.domain_valid is True
+    assert rep_k5.is_ramanujan is True
+    assert math.isclose(rep_k5.expansion_ratio, 0.288675, abs_tol=1e-3)
+
+    # 3. Irregular graph (star graph on 6 nodes)
+    A_star = torch.zeros((6, 6))
+    A_star[0, 1:] = 1.0
+    A_star[1:, 0] = 1.0
+    rep_star = HarmonicTorusSpectrum.ramanujan_expansion_ratio(A_star, return_report=True)
+    assert rep_star.is_regular is False
+    assert rep_star.domain_valid is False
+    assert "irregular" in rep_star.domain_warning.lower()
+
+
 if __name__ == "__main__":
     test_ekfac_curvature_and_ihvp()
     test_cellular_sheaf_laplacian_properties()
@@ -267,4 +425,8 @@ if __name__ == "__main__":
     test_sheaf_3d_rotation_counterexample_and_procrustes()
     test_rope_rational_dependence_and_joint_character()
     test_ramanujan_largest_absolute_nontrivial_eigenvalue()
+    test_procrustes_transport_direction_and_batch_fitting()
+    test_rope_resonance_multi_coordinate_search_dim16()
+    test_sheaf_fundamental_cycle_basis_triangle_plus_square()
+    test_ramanujan_domain_validation_disconnected_k5_and_regularity()
     print("All advanced math tests passed successfully!")
