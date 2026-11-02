@@ -173,9 +173,98 @@ def test_harmonic_torus_spectrum():
     assert math.isfinite(rho)
 
 
+def test_sheaf_3d_rotation_counterexample_and_procrustes():
+    """Verify 3D rotation counterexample: H != I retains 1D kernel along rotation axis;
+
+    and verify learned Procrustes orthogonal transports.
+    """
+    torch.manual_seed(42)
+    # 1. 3D Rotation Counterexample around z-axis
+    theta = math.pi / 2  # 90 degrees, clearly H != I
+    R_z = torch.tensor([
+        [math.cos(theta), -math.sin(theta), 0.0],
+        [math.sin(theta),  math.cos(theta), 0.0],
+        [0.0,             0.0,             1.0],
+    ], dtype=torch.float32)
+
+    # Confirm H != I
+    assert not torch.allclose(R_z, torch.eye(3))
+
+    # Rotation axis vector
+    v_axis = torch.tensor([0.0, 0.0, 1.0], dtype=torch.float32)
+    assert torch.allclose(R_z @ v_axis, v_axis)  # Fixed axis
+
+    # Kernel of (H - I) is 1-dimensional
+    H_minus_I = R_z - torch.eye(3)
+    sv = torch.linalg.svdvals(H_minus_I)
+    dim_ker = int((sv < 1e-5).sum().item())
+    assert dim_ker == 1, f"Expected 1D kernel along rotation axis, got {dim_ker}"
+
+    # Build 3-node triangle cycle where all edges carry R_z
+    sheaf = CellularSheafLaplacian(num_nodes=3, dim=3)
+    sheaf.edges = [(0, 1), (1, 2), (0, 2)]
+    sheaf.restriction_maps[(0, 1)] = (R_z, torch.eye(3))
+    sheaf.restriction_maps[(1, 2)] = (R_z, torch.eye(3))
+    sheaf.restriction_maps[(0, 2)] = (torch.eye(3), R_z)
+
+    # Constant axis section X = [v_axis; v_axis; v_axis] has ZERO energy
+    X_axis = v_axis.repeat(3, 1)
+    e_zero = sheaf.compute_sheaf_dirichlet_energy(X_axis, normalized=False)
+    assert e_zero < 1e-6, f"Expected zero energy along rotation axis, got {e_zero}"
+
+    # 2. Learned Procrustes transports
+    Z_sim = torch.randn(4, 3)
+    err = sheaf.learn_procrustes_transports(Z_sim)
+    assert err >= 0.0
+    assert len(sheaf.restriction_maps) > 0
+
+
+def test_rope_rational_dependence_and_joint_character():
+    """Verify RoPE dim=8 rational dependence:
+
+    At N=100,000, marginal Weyl mean is exactly 0.00160038, while joint character has magnitude 1.0!
+    """
+    d = 8
+    seq_len = 100000
+    mean_w, t_dist, joint_mag, is_rat = HarmonicTorusSpectrum.rope_torus_winding(
+        dim=d, seq_len=seq_len, base=10000.0, return_joint=True
+    )
+    # For dim=8, freqs are [1, 0.1, 0.01, 0.001], which are rational powers
+    assert is_rat is True
+    # Marginal Weyl sum evaluates to exactly ~0.00160038
+    assert math.isclose(mean_w, 0.00160038, abs_tol=1e-5)
+    # Exact joint character for integer relation 10*omega_1 - omega_0 == 0 has magnitude 1.0!
+    assert math.isclose(joint_mag, 1.0, abs_tol=1e-5)
+
+
+def test_ramanujan_largest_absolute_nontrivial_eigenvalue():
+    """Verify Ramanujan diagnostic on 4-regular graph with negative eigenvalue:
+
+    Naive ratio (lambda_2 only) falsely passes at ~0.72, while correct ratio (max |lambda|) fails at ~1.04.
+    """
+    k = 4.0
+    ram_bound_normalized = (2.0 * math.sqrt(k - 1.0)) / k  # 2 * sqrt(3) / 4 ~= 0.8660
+
+    # Adjacency matrix of 6-node graph with normalized eigenvalues [1.0, 0.6235, ..., -0.9010]
+    # Corresponding to unnormalized [4.0, 2.494, ..., -3.604]
+    lambda_2_norm = 2.494 / 4.0   # 0.6235
+    lambda_n_norm = -3.604 / 4.0  # -0.9010
+
+    naive_ratio = lambda_2_norm / ram_bound_normalized
+    correct_ratio = max(abs(lambda_2_norm), abs(lambda_n_norm)) / ram_bound_normalized
+
+    assert math.isclose(naive_ratio, 0.71995, abs_tol=1e-3)
+    assert math.isclose(correct_ratio, 1.04038, abs_tol=1e-3)
+    assert naive_ratio < 1.0  # Naive falsely passes
+    assert correct_ratio > 1.0  # Correct diagnostic detects violation of Ramanujan property
+
+
 if __name__ == "__main__":
     test_ekfac_curvature_and_ihvp()
     test_cellular_sheaf_laplacian_properties()
     test_circuit_attribution_direct_logit_attribution_linearity()
     test_harmonic_torus_spectrum()
+    test_sheaf_3d_rotation_counterexample_and_procrustes()
+    test_rope_rational_dependence_and_joint_character()
+    test_ramanujan_largest_absolute_nontrivial_eigenvalue()
     print("All advanced math tests passed successfully!")

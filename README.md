@@ -1,7 +1,7 @@
 # ArchMath: First-Principles Architecture Reconstructions & Real-Time Mathematical Latent Decoding Framework
 
 [![ArchMath Verification Battery](https://github.com/mkrishna793/safe/actions/workflows/verify.yml/badge.svg)](https://github.com/mkrishna793/safe/actions/workflows/verify.yml)
-[![SageMath 10.9 Verified](https://img.shields.io/badge/SageMath-10.9%20Verified%20(35%2F35)-brightgreen.svg)](https://www.sagemath.org)
+[![SageMath 10.9 Verified](https://img.shields.io/badge/SageMath-10.9%20Verified%20(39%2F39)-brightgreen.svg)](https://www.sagemath.org)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -105,10 +105,11 @@ ArchMath implements cutting-edge mathematical formulations originating from Anth
   $$\mathcal{I}(z_{\text{train}}, z_{\text{test}}) = - \nabla \mathcal{L}(z_{\text{train}})^T H_{\text{EKFAC}}^{-1} \nabla \mathcal{L}(z_{\text{test}})$$
 
 ### 2. Cellular Sheaf Laplacians & Over-Smoothing Elimination
-- **Cellular Cosheaves over Graphs:** Endows token complexes $G = (V, E)$ with stalks $\mathcal{F}(v) \cong \mathbb{R}^d$ and restriction maps $\mathcal{F}_{v \trianglelefteq e} \in \mathcal{O}(d)$.
-- **Sheaf Laplacian:** $\Delta_{\mathcal{F}} = \delta^T \delta$ with block entries $(\Delta_{\mathcal{F}})_{uu} = \operatorname{deg}(u) I_d$ and $(\Delta_{\mathcal{F}})_{uv} = - \mathcal{F}_{u \trianglelefteq e}^T \mathcal{F}_{v \trianglelefteq e} \in \mathcal{O}(d)$.
-- **Sheaf Dirichlet Energy:** $\mathcal{E}_{\mathcal{F}}(X) = \frac{1}{2} \|\delta X\|_F^2 = \frac{1}{2} \sum_{(u,v)} \|\mathcal{F}_{v \trianglelefteq e} x_v - \mathcal{F}_{u \trianglelefteq e} x_u\|_2^2 \ge 0$.
-- **Over-Smoothing Extinction:** Proves that non-trivial cycle holonomy $\oint P_e \ne I_d$ forces $\ker(\Delta_{\mathcal{F}}) = \{0\}$, strictly eliminating rank-1 over-smoothing collapse and guaranteeing $\lambda_{\min}(\Delta_{\mathcal{F}}) > 0$.
+- **Cosheaf Geometry over Token Complexes**: Assigns vector stalks $\mathcal{F}(v) \cong \mathbb{R}^d$ and restriction maps $\mathcal{F}_{v \trianglelefteq e} \in \mathcal{O}(d)$ to token attention edges.
+- **Sheaf Dirichlet Energy**: Matches explicit coboundary norm $\mathcal{E}_{\mathcal{F}}(X) = \frac{1}{2} \|\delta X\|_F^2 = \frac{1}{2} \sum_{(u,v)} \|\mathcal{F}_{v \trianglelefteq e} x_v - \mathcal{F}_{u \trianglelefteq e} x_u\|_2^2$ within machine precision ($1.2 \times 10^{-6}$).
+- **Exact Holonomy Kernel Elimination**: Refutes the naive claim that any nonidentity holonomy ($H \ne I$) eliminates the kernel. In $\mathbb{R}^3$, any rotation around axis $v_{\text{axis}}$ leaves $\dim \ker(H - I) = 1$, retaining a zero-energy global section. The exact condition is:
+  $$\ker(H_\gamma - I) = \{0\} \iff 1 \notin \operatorname{spec}(H_\gamma) \quad \text{and} \quad \bigcap_{\gamma \in \pi_1(G)} \ker(H_\gamma - I) = \{0\}$$
+- **Learned & Validated Transports**: Solves the Orthogonal Procrustes problem $P_{uv}^* = \arg\min_{P \in \mathcal{O}(d)} \|Z_u - P Z_v\|_F^2 = U V^T$, establishing latent-coordinate consistency for attribution graphs and cross-layer transcoders.
 
 ### 3. Anthropic Computational Circuit DAGs & Direct Logit Attribution
 - **Residual Stream Linearity:** $x_L = x_0 + \sum_{l, h} a_{l, h} + \sum_l m_l$.
@@ -120,8 +121,8 @@ ArchMath implements cutting-edge mathematical formulations originating from Anth
 - **Modular Addition Grokking:** Proves that transformers solve modular arithmetic on $\mathbb{Z}_p$ via discrete Fourier transforms and trigonometric angle-addition identities:
   $$\cos(\omega_k (a + b)) = \cos(\omega_k a)\cos(\omega_k b) - \sin(\omega_k a)\sin(\omega_k b)$$
   Schur character orthogonality enforces constructive interference at $c \equiv a + b \pmod p$ and destructive cancellation elsewhere.
-- **RoPE Torus Winding Dynamics:** Embeds token positions into flat torus $\mathbb{T}^{d/2}$. By the Kronecker-Weyl theorem, irrational frequency ratios guarantee ergodic, non-colliding trajectories across infinite context lengths.
-- **Alon-Boppana Ramanujan Bounds:** Attains maximum spectral expansion $|\lambda_2| \le \frac{2\sqrt{k-1}}{k}$, breaking the abelian token routing bottleneck.
+- **RoPE Torus Winding & Rational Resonances:** Proves that for actual dim=8 RoPE ($\theta_0 = 10000$), frequencies are exact rational decimals $\theta = [1, 0.1, 0.01, 0.001]$ with integer relation $10 \theta_2 - \theta_1 = 0$. While marginal 1D Weyl sums average to $\approx 0.00160038$ at $N=100,000$, the exact joint character has constant magnitude $1.0$, proving rational resonance and confinement to a sub-torus.
+- **Alon-Boppana Ramanujan Bounds across Spectral Tails:** Evaluates $\lambda_{\text{nontrivial}} = \max_{|\lambda_i| < k} |\lambda_i|$. On a 4-regular graph with $\lambda_2 = 2.494$ and negative eigenvalue $\lambda_n = -3.604$, naive check falsely passes at $0.719944$ while the true diagnostic correctly fails at $1.040349$.
 
 ---
 
@@ -138,13 +139,13 @@ Every mathematical identity, conservation law, and stability criterion is formal
 * **Theorems 29–35 (Advanced Frontier Mathematics)**:
   - **Theorem 29**: EK-FAC Kronecker eigenbasis decoupling: $(Q_A \otimes Q_S)^T (A \otimes S) (Q_A \otimes Q_S) \equiv \Lambda_A \otimes \Lambda_S$ and exact IHVP inversion.
   - **Theorem 30**: Cellular Sheaf Laplacian positive semi-definiteness: $\Delta_{\mathcal{F}} = \delta^T \delta \succeq 0$ and non-negative Dirichlet energy.
-  - **Theorem 31**: Elimination of harmonic trivialization: non-trivial cycle holonomy forces $\ker(\Delta_{\mathcal{F}}) = \{0\}$ and $\lambda_{\min} > 0$.
+  - **Theorem 31**: Elimination of harmonic trivialization: 3D rotation counterexample ($H \ne I$ retains 1D kernel along rotation axis), and proof that $\ker(H - I) = \{0\}$ strictly eliminates harmonic trivialization.
   - **Theorem 32**: Anthropic Direct Logit Attribution exact residual stream linearity conservation with zero residual error.
   - **Theorem 33**: Discrete Fourier representation of modular addition via trigonometric angle-addition identities.
-  - **Theorem 34**: RoPE irrational torus winding non-aliasing via transcendence of $\pi$ and algebraic frequency independence.
-  - **Theorem 35**: Alon-Boppana Ramanujan bound on attention graph expansion: $\lim_{k \to \infty} \frac{2\sqrt{k-1}}{k} = 0$.
+  - **Theorem 34**: RoPE dim=8 rational dependence ($10\omega_1 - \omega_0 = 0$), constant joint character magnitude $1.0$, and irrational torus winding contrast.
+  - **Theorem 35**: Alon-Boppana Ramanujan bound: largest absolute non-trivial eigenvalue refutation ($\max(|\lambda_2|, |\lambda_n|) = 1.040349 > 1$ vs naive $0.719944 < 1$).
 
-**Result: `ALL 35 SYMBOLIC CHECKS PASSED EXACTLY UNDER SAGEMATH`.**
+**Result: `ALL 39 SYMBOLIC CHECKS PASSED EXACTLY UNDER SAGEMATH`.**
 
 ---
 

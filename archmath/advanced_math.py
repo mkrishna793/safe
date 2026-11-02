@@ -220,10 +220,13 @@ class SheafSpectralReport:
     num_edges: int
     dirichlet_energy: float
     normalized_dirichlet_energy: float
-    algebraic_connectivity: float  # lambda_min(Delta_F)
+    algebraic_connectivity: float          # lambda_min(Delta_F)
     spectral_gap: float
-    is_harmonic_trivial: bool      # True if ker(Delta_F) has non-zero elements
-    holonomy_trace_mean: float     # Mean trace of cycle holonomies
+    harmonic_space_dim: int                # dim ker(Delta_F)
+    is_harmonic_trivial: bool              # True iff harmonic_space_dim == 0 (lambda_min > eps)
+    joint_fixed_subspace_dim: int          # dim intersection ker(H_gamma - I)
+    holonomy_trace_mean: float             # Mean trace of cycle holonomies
+    transport_fit_error: float = 0.0       # Procrustes alignment residual error
 
 
 class CellularSheafLaplacian:
@@ -233,12 +236,19 @@ class CellularSheafLaplacian:
     For each edge e = (u, v), restriction maps F_{u <= e}, F_{v <= e} in O(d)
     govern parallel transport of latent features.
 
-    The coboundary operator delta: C^0(G; F) -> C^1(G; F) is:
-      (delta x)_e = F_{v <= e} x_v - F_{u <= e} x_u.
+    Mathematical Invariant:
+      The Sheaf Laplacian Delta_F = delta^T delta has Dirichlet energy:
+        E_F(Z) = 1/2 <x, Delta_F x> = 1/2 sum_{e=(u,v)} ||F_{v <= e} x_v - F_{u <= e} x_u||_2^2 >= 0.
 
-    The Sheaf Laplacian Delta_F = delta^T delta has block entries:
-      (Delta_F)_{u, u} = deg(u) * I_d
-      (Delta_F)_{u, v} = - F_{u <= e}^T F_{v <= e}   for e = (u, v).
+      Kernel Elimination Theorem (Refined):
+        The claim that any nonidentity holonomy (H != I) eliminates the kernel is FALSE.
+        For example, a non-trivial 3D rotation with a fixed axis leaves ker(H - I) 1-dimensional,
+        retaining a non-zero zero-energy global section along the rotation axis.
+        The correct necessary & sufficient condition for a cycle gamma to eliminate the cycle kernel is:
+          ker(H_gamma - I) = {0}  <=>  1 not in spec(H_gamma).
+        For the entire graph, the harmonic space satisfies:
+          ker(Delta_F) = H^0(G; F) = intersection_{gamma in pi_1(G)} ker(H_gamma - I).
+        Hence over-smoothing is eliminated iff the joint fixed-point subspace is trivial: {0}.
     """
 
     def __init__(self, num_nodes: int, dim: int, eps: float = 1e-8):
@@ -248,6 +258,79 @@ class CellularSheafLaplacian:
         self.edges: List[Tuple[int, int]] = []
         # Stored restriction maps: dict mapping (u, v) -> (F_{u <= e}, F_{v <= e})
         self.restriction_maps: Dict[Tuple[int, int], Tuple[torch.Tensor, torch.Tensor]] = {}
+        self.transport_error: float = 0.0
+
+    def learn_procrustes_transports(
+        self,
+        Z: torch.Tensor,
+        edges: Optional[List[Tuple[int, int]]] = None,
+        attn_matrix: Optional[torch.Tensor] = None,
+        threshold: float = 0.05,
+    ) -> float:
+        """Learn and validate orthogonal transport maps P_{uv} in O(d) via Orthogonal Procrustes.
+
+        Given empirical token representations Z in R^{S x d}:
+          P_{uv}^* = argmin_{P in O(d)} ||Z_u - P Z_v||_F^2.
+        Closed-form solution via SVD of cross-covariance M = Z_u^T Z_v = U Sigma V^T:
+          P_{uv}^* = U V^T in O(d).
+        """
+        with torch.no_grad():
+            Z_f = Z.detach().float()
+            if Z_f.dim() >= 3:
+                Z_f = Z_f[0]
+            S = min(self.num_nodes, Z_f.shape[0])
+            d = min(self.dim, Z_f.shape[-1])
+            Z_f = Z_f[:S, :d]
+
+            self.edges.clear()
+            self.restriction_maps.clear()
+
+            if edges is not None:
+                candidate_edges = edges
+            elif attn_matrix is not None:
+                A = attn_matrix.detach().float()
+                if A.dim() == 4:
+                    A = A[0].mean(dim=0)
+                elif A.dim() == 3:
+                    A = A[0]
+                candidate_edges = []
+                for i in range(S):
+                    for j in range(i + 1, S):
+                        w = 0.5 * (A[i, j] + A[j, i]).item()
+                        if w >= threshold or abs(i - j) == 1:
+                            candidate_edges.append((i, j))
+            else:
+                candidate_edges = [(i, i + 1) for i in range(S - 1)]
+
+            total_err = 0.0
+            count = 0
+
+            for (u, v) in candidate_edges:
+                if u >= S or v >= S:
+                    continue
+                self.edges.append((u, v))
+                z_u = Z_f[u].unsqueeze(0)  # (1, d)
+                z_v = Z_f[v].unsqueeze(0)  # (1, d)
+
+                # Cross-covariance matrix
+                M = z_u.T @ z_v  # (d, d)
+                try:
+                    U, _, Vh = torch.linalg.svd(M)
+                    # Orthogonal Procrustes solution: P = U V^T
+                    P_uv = U @ Vh
+                except Exception:
+                    P_uv = torch.eye(d, device=Z_f.device)
+
+                R_u = P_uv
+                R_v = torch.eye(d, device=Z_f.device)
+                self.restriction_maps[(u, v)] = (R_u, R_v)
+
+                diff = (R_v @ Z_f[v]) - (R_u @ Z_f[u])
+                total_err += float(diff.pow(2).sum().item())
+                count += 1
+
+            self.transport_error = total_err / max(1, count)
+            return self.transport_error
 
     def build_from_attention(
         self,
@@ -255,7 +338,7 @@ class CellularSheafLaplacian:
         threshold: float = 0.05,
         rotation_scale: float = 0.1,
     ) -> None:
-        """Construct sheaf topology and orthogonal restriction maps from attention weights."""
+        """Construct sheaf topology with orthogonal restriction maps parameterized by attention weights."""
         with torch.no_grad():
             A = attn_matrix.detach().float()
             if A.dim() == 4:
@@ -269,10 +352,9 @@ class CellularSheafLaplacian:
             for i in range(S):
                 for j in range(i + 1, S):
                     weight = 0.5 * (A[i, j] + A[j, i]).item()
-                    if weight >= threshold or abs(i - j) == 1:  # Keep causal chain always
+                    if weight >= threshold or abs(i - j) == 1:
                         self.edges.append((i, j))
-                        # Generate orthogonal restriction maps in O(d) via matrix exponential of skew-symmetric matrix
-                        # K_ij = -K_ij^T -> exp(K_ij) in SO(d)
+                        # Generate orthogonal restriction maps in SO(d) via Lie algebra exp(K)
                         K = torch.randn(self.dim, self.dim, device=A.device) * rotation_scale * weight
                         K = 0.5 * (K - K.T)
                         R_u = torch.matrix_exp(K)
@@ -284,8 +366,6 @@ class CellularSheafLaplacian:
         N = self.num_nodes
         d = self.dim
         Delta = torch.zeros((N * d, N * d), dtype=torch.float32, device=device)
-
-        # Degrees accumulator
         degrees = [0] * N
 
         for (u, v), (R_u, R_v) in self.restriction_maps.items():
@@ -307,7 +387,7 @@ class CellularSheafLaplacian:
         return Delta
 
     def compute_sheaf_dirichlet_energy(self, Z: torch.Tensor, normalized: bool = True) -> float:
-        """Compute Sheaf Dirichlet Energy E_F(Z) = 1/2 <x, Delta_F x> >= 0."""
+        """Compute Sheaf Dirichlet Energy E_F(Z) = 1/2 <x, Delta_F x> = 1/2 ||delta x||^2."""
         with torch.no_grad():
             Z_f = Z.detach().float()
             if Z_f.dim() >= 3:
@@ -329,19 +409,27 @@ class CellularSheafLaplacian:
             return float(energy)
 
     def spectral_analysis(self, device: Any = "cpu") -> SheafSpectralReport:
-        """Compute algebraic connectivity and verify elimination of harmonic triviality."""
+        """Compute algebraic connectivity and verify elimination of harmonic triviality.
+
+        Evaluates the exact condition ker(H_gamma - I) = {0} on cycle holonomies.
+        """
         Delta = self.assemble_laplacian(device=device)
         try:
             eigs = torch.linalg.eigvalsh(Delta)
             eigs = torch.sort(eigs).values
             lambda_min = float(max(0.0, eigs[0].item()))
             gap = float((eigs[1] - eigs[0]).item()) if len(eigs) > 1 else 0.0
+            null_dim = int((eigs < 1e-4).sum().item())
         except Exception:
             lambda_min = 0.0
             gap = 0.0
+            null_dim = self.dim
 
-        # Check holonomy trace around triangle cycles if present
+        # Extract cycle holonomies and compute exact fixed-point kernels ker(H - I)
         holonomy_traces = []
+        cycle_fixed_dims = []
+        stacked_H_minus_I = []
+
         for i in range(min(self.num_nodes, 8)):
             for j in range(i + 1, min(self.num_nodes, 8)):
                 for k in range(j + 1, min(self.num_nodes, 8)):
@@ -349,14 +437,30 @@ class CellularSheafLaplacian:
                         R_ij_u, R_ij_v = self.restriction_maps[(i, j)]
                         R_jk_u, R_jk_v = self.restriction_maps[(j, k)]
                         R_ik_u, R_ik_v = self.restriction_maps[(i, k)]
-                        # Cycle transport: U_ij * U_jk * U_ki
+                        # Cycle holonomy around triangle: U_ij * U_jk * U_ki
                         U_ij = R_ij_u.T @ R_ij_v
                         U_jk = R_jk_u.T @ R_jk_v
                         U_ki = (R_ik_u.T @ R_ik_v).T
-                        cycle = U_ij @ U_jk @ U_ki
-                        holonomy_traces.append(float(torch.trace(cycle).item()) / self.dim)
+                        cycle_H = U_ij @ U_jk @ U_ki
+
+                        holonomy_traces.append(float(torch.trace(cycle_H).item()) / self.dim)
+
+                        # Check ker(H - I) = {0}
+                        H_minus_I = cycle_H - torch.eye(self.dim, device=cycle_H.device)
+                        sv = torch.linalg.svdvals(H_minus_I)
+                        cycle_fixed_dim = int((sv < 1e-4).sum().item())
+                        cycle_fixed_dims.append(cycle_fixed_dim)
+                        stacked_H_minus_I.append(H_minus_I)
 
         mean_tr = float(sum(holonomy_traces) / len(holonomy_traces)) if holonomy_traces else 1.0
+
+        # Joint intersection of fixed-point subspaces: ker([H_1 - I; H_2 - I; ...])
+        if stacked_H_minus_I:
+            stacked_mat = torch.cat(stacked_H_minus_I, dim=0)  # (K*d, d)
+            sv_joint = torch.linalg.svdvals(stacked_mat)
+            joint_fixed_dim = int((sv_joint < 1e-4).sum().item())
+        else:
+            joint_fixed_dim = null_dim
 
         return SheafSpectralReport(
             num_nodes=self.num_nodes,
@@ -366,8 +470,11 @@ class CellularSheafLaplacian:
             normalized_dirichlet_energy=0.0,
             algebraic_connectivity=lambda_min,
             spectral_gap=gap,
-            is_harmonic_trivial=(lambda_min < 1e-4),
+            harmonic_space_dim=null_dim,
+            is_harmonic_trivial=(null_dim == 0),
+            joint_fixed_subspace_dim=joint_fixed_dim,
             holonomy_trace_mean=mean_tr,
+            transport_fit_error=self.transport_error,
         )
 
 
@@ -570,12 +677,16 @@ class HarmonicTorusSpectrum:
         dim: int,
         seq_len: int,
         base: float = 10000.0,
-    ) -> Tuple[float, float]:
+        return_joint: bool = False,
+    ) -> Union[Tuple[float, float], Tuple[float, float, float, bool]]:
         """Evaluate RoPE irrational winding dynamics on torus T^{d/2}.
 
         Computes:
-        1. Weyl sum equidistribution metric: W_N = (1 / (d/2)) sum_k |(1/N) sum_m exp(i*m*omega_k)|.
+        1. Marginal Weyl sum metric: W_N = (1 / (d/2)) sum_k |(1/N) sum_m exp(i*m*omega_k)|.
         2. Mean torus geodesic distance between consecutive position steps.
+        3. Joint character resonance magnitude: max_{c != 0} |(1/N) sum_m exp(i*m*c^T omega)|.
+           Detects rational dependence (e.g. for dim=8, base=10000, omega = [1, 0.1, 0.01, 0.001],
+           c = [-1, 10, 0, 0] yields an exact character magnitude of 1.0, proving rational confinement).
         """
         half_dim = dim // 2
         indices = torch.arange(half_dim, dtype=torch.float32)
@@ -584,24 +695,46 @@ class HarmonicTorusSpectrum:
         positions = torch.arange(seq_len, dtype=torch.float32).unsqueeze(1)  # (N, 1)
         angles = positions @ omega.unsqueeze(0)  # (N, half_dim)
 
-        # 1. Weyl sum: (1/N) sum_{m=1}^N exp(i * m * omega_k)
+        # 1. Marginal Weyl sum: (1/N) sum_{m=1}^N exp(i * m * omega_k)
         complex_phases = torch.polar(torch.ones_like(angles), angles)  # (N, half_dim)
         weyl_sums = torch.abs(torch.mean(complex_phases, dim=0))  # (half_dim,)
         mean_weyl = float(torch.mean(weyl_sums).item())
 
         # 2. Geodesic distance on flat torus T^{half_dim} between pos 0 and pos 1:
-        # dist_T^2 = sum_k (min(|omega_k|, 2*pi - |omega_k|))^2
         omega_mod = torch.remainder(omega, 2.0 * math.pi)
         wrapped_dist = torch.minimum(omega_mod, 2.0 * math.pi - omega_mod)
         torus_dist = float(torch.sqrt(torch.sum(wrapped_dist.pow(2))).item())
 
+        # 3. Joint Character Resonance Analysis
+        # Check standard integer resonant relation: c = (-1, round(omega[0]/omega[1]), 0, ...)
+        is_rat_dep = False
+        joint_char_mag = 0.0
+        if half_dim >= 2:
+            ratio = float(omega[0] / omega[1])
+            ratio_int = round(ratio)
+            if abs(ratio - ratio_int) < 1e-4:
+                is_rat_dep = True
+                # Integer linear combination: ratio_int * omega[1] - omega[0] == 0
+                c_vec = torch.zeros(half_dim, dtype=torch.float32)
+                c_vec[0] = -1.0
+                c_vec[1] = float(ratio_int)
+                scalar_angle = float(torch.sum(c_vec * omega).item())
+                joint_angle = positions * scalar_angle  # (N, 1)
+                joint_phase = torch.polar(torch.ones_like(joint_angle), joint_angle)
+                joint_char_mag = float(torch.abs(torch.mean(joint_phase)).item())
+
+        if return_joint:
+            return mean_weyl, torus_dist, joint_char_mag, is_rat_dep
         return mean_weyl, torus_dist
 
     @staticmethod
     def ramanujan_expansion_ratio(attn_matrix: torch.Tensor) -> float:
-        """Compute Ramanujan graph expansion ratio rho = lambda_2 / (2*sqrt(k - 1) / k).
+        """Compute Ramanujan graph expansion ratio rho = lambda_nontrivial / (2*sqrt(k - 1) / k).
 
-        If rho <= 1.0, the attention adjacency attains the Alon-Boppana Ramanujan bound.
+        Rigorously evaluates the largest absolute non-trivial eigenvalue:
+          lambda_nontrivial = max_{|lambda| < 1.0 - eps} |lambda_i|.
+        Prevents false passes where lambda_2 is small but negative eigenvalues (e.g. lambda_n)
+        exceed the Alon-Boppana bound. If rho <= 1.0, the graph is strictly Ramanujan.
         """
         with torch.no_grad():
             A = attn_matrix.detach().float()
@@ -622,8 +755,13 @@ class HarmonicTorusSpectrum:
             A_norm = D_inv_sqrt @ A_sym @ D_inv_sqrt
             try:
                 eigs = torch.linalg.eigvalsh(A_norm)
-                eigs = torch.sort(eigs, descending=True).values
-                lambda_2 = float(abs(eigs[1].item()))
+                # Exclude trivial Perron-Frobenius eigenvalue |lambda| >= 1.0 - 1e-4
+                nontrivial_mask = torch.abs(torch.abs(eigs) - 1.0) > 1e-4
+                if nontrivial_mask.any():
+                    # Correct largest absolute non-trivial eigenvalue: max(|lambda_2|, |lambda_n|)
+                    lambda_nontrivial = float(torch.max(torch.abs(eigs[nontrivial_mask])).item())
+                else:
+                    lambda_nontrivial = 0.0
             except Exception:
                 return 1.0
 
@@ -633,5 +771,5 @@ class HarmonicTorusSpectrum:
 
             # Alon-Boppana Ramanujan bound: 2*sqrt(k - 1) / k
             bound = (2.0 * math.sqrt(max(0.0, k_avg - 1.0))) / k_avg
-            ratio = lambda_2 / (bound + 1e-8)
+            ratio = lambda_nontrivial / (bound + 1e-8)
             return float(ratio)
